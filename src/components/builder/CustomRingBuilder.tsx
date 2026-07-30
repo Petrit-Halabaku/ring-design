@@ -20,11 +20,11 @@ export default function CustomRingBuilder() {
 
   return (
     <>
-      {phase === "wizard" && <RingWizard onComplete={toLoading} />}
+      {/* {phase === "wizard" && <RingWizard onComplete={toLoading} />}
       {phase === "loading" && <LoadingScreen onDone={toDesigner} />}
-      {phase === "designer" && (
+      {phase === "designer" && ( */}
         <RingDesigner shapeId={picked.shapeId} carat={picked.carat} />
-      )}
+      {/* )} */}
     </>
   );
 }

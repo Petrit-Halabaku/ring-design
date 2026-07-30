@@ -28,7 +28,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${roboto.variable} ${lora.variable} antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }

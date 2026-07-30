@@ -220,7 +220,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           </div>
 
           {/* Option panels */}
-          <div className="absolute inset-x-3 bottom-3 z-10 max-h-[45%] space-y-2 overflow-y-auto md:inset-x-auto md:right-4 md:top-4 md:bottom-auto md:max-h-[calc(100%-2rem)] md:w-[280px]">
+          <div className="absolute inset-x-3 bottom-3 z-10 h-full space-y-2 overflow-y-auto md:inset-x-auto md:right-4 md:top-4 md:bottom-auto  md:w-[280px]">
             {panels.map((panel) => {
               const isOpen = open === panel.id;
               return (
