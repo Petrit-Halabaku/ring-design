@@ -1,0 +1,869 @@
+/*
+ * Ring-builder walkthrough styles.
+ * Copied from the `jos-*` stylesheet injected into casalejewelers.net/custom-ring-builder/
+ * by https://www.jeweleros.com/static/dist/jos.js
+ */
+
+.jos-walkthrough {
+  position: fixed;
+  inset: 0;
+  background: #e4e5de;
+  z-index: 2147483647;
+  font-family: -apple-system, system-ui, sans-serif;
+  touch-action: pan-y pinch-zoom; /* Only allow vertical scroll */
+  transition: opacity 0.3s ease-out;
+  opacity: 1;
+  font-size: 16px !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+.jos-walkthrough.fade-out {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+
+.jos-walkthrough.jos-fade-in {
+  animation: walkthroughFadeIn 0.3s ease-out;
+}
+
+@keyframes walkthroughFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.jos-step-title {
+  font-family: -apple-system, system-ui, sans-serif;
+  text-align: center;
+  font-size: 1.75em;
+  line-height: 1.5em;
+  font-weight: 600;
+  margin-bottom: 0.75em;
+  margin-left: 0.4em;
+  margin-right: 0.4em;
+}
+
+.jos-option {
+  cursor: pointer;
+  border: 1px solid #b7b7b3;
+  border-radius: 8px;
+  text-align: center;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+  font-family: inherit;
+  color: inherit;
+  width: 100%;
+  padding: 0;
+}
+
+.jos-option.center-vert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.jos-option:hover {
+  border-color: #1c1d1e;
+  transform: translateY(-2px);
+}
+
+.jos-walkthrough .jos-skip {
+  all: unset !important;
+  box-sizing: border-box !important;
+  position: absolute !important;
+  top: 50% !important;
+  right: 1em !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  padding: 0.5em 0.75em !important;
+  border: none !important;
+  border-radius: 6px !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  color: #b1aaaa !important;
+  cursor: pointer !important;
+  font-family: -apple-system, system-ui, sans-serif !important;
+  font-size: 1em !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  text-align: center !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  transform: translateY(-50%) !important;
+  transition: color 0.2s ease, background-color 0.2s ease !important;
+  white-space: nowrap !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  touch-action: manipulation !important;
+}
+
+.jos-walkthrough .jos-skip:hover {
+  color: #8a8585 !important;
+  text-decoration: underline !important;
+}
+
+.jos-walkthrough .jos-skip:focus-visible {
+  color: #8a8585 !important;
+  outline: 2px solid rgba(138, 133, 133, 0.35) !important;
+  outline-offset: 2px !important;
+  text-decoration: underline !important;
+}
+
+.jos-walkthrough .jos-skip:active {
+  color: #8a8585 !important;
+  transform: translateY(-50%) !important;
+}
+
+.jos-walkthrough .jos-nav {
+  position: relative !important;
+  box-sizing: border-box !important;
+  display: flex;
+  align-items: center;
+  min-height: 4em;
+  padding: 0.625em 6em 0.625em 1em;
+  border-bottom: 1px solid #eee;
+}
+
+.jos-back {
+  cursor: pointer !important;
+  color: #1c1d1e !important;
+  display: flex !important;
+  border: 1px solid #b7b7b3 !important;
+  border-radius: 8px !important;
+  align-items: center !important;
+  background: transparent;
+  padding: 0.375em 0.25em;
+}
+
+.jos-back:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.jos-back:hover {
+  color: #1c1d1e !important;
+  border-color: #929290 !important;
+  background-color: #fafaf9 !important;
+  transition: all 0.2s ease !important;
+}
+
+.jos-back:active {
+  transform: translateY(1px) !important;
+  background-color: #f0f0ee !important;
+}
+
+.jos-back-text {
+  font-size: 1em !important;
+  line-height: 1.5 !important;
+  margin-left: 0.5em !important;
+  margin-right: 0.5em !important;
+}
+
+.jos-step-counter {
+  font-weight: 500;
+  color: rgba(18, 18, 18, 0.6);
+  margin-left: 1em;
+  margin-right: 1em;
+  margin-top: 1em;
+}
+
+.jos-step-header {
+  text-align: center;
+  margin-bottom: 2em;
+}
+
+.jos-step-subtitle {
+  color: rgba(18, 18, 18, 0.6);
+  line-height: 1.5;
+  margin-top: 0.5em;
+  margin-right: 1.4em;
+  margin-left: 1.4em;
+}
+
+.jos-option-desc {
+  color: rgba(18, 18, 18, 0.6);
+  font-size: 0.875em;
+  line-height: 1.5;
+  margin-top: 0.25em;
+  margin-bottom: 0.5em;
+}
+
+.jos-option-desc-xl {
+  color: rgba(18, 18, 18, 0.6);
+  font-size: 0.875em;
+  line-height: 1.5;
+  margin-top: 0.25em;
+  margin-bottom: 1em;
+}
+
+.jos-option-desc-sub,
+.jos-option-desc-sub-xl {
+  color: rgba(18, 18, 18, 0.6);
+  font-size: 0.875em;
+  line-height: 1.5;
+  margin-top: 0.25em;
+}
+
+.jos-content {
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* Prevent scroll chain */
+  height: calc(100% - 64px);
+  overflow-x: hidden;
+}
+
+.jos-content-content {
+  padding-bottom: 2rem;
+}
+
+.jos-step-content {
+  max-width: 64em;
+  margin-left: auto;
+  margin-right: auto;
+  position: relative;
+  width: 100%;
+  transition: transform 0.3s ease-in-out;
+}
+
+.jos-step-content.previous {
+  transform: translateX(-100%);
+}
+
+.jos-step-content.current {
+  transform: translateX(0);
+}
+
+.jos-step-content.next {
+  transform: translateX(100%);
+}
+
+.jos-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  margin-left: 1em;
+}
+
+.jos-history-item {
+  display: flex;
+  align-items: center;
+  padding: 0.25em 0.5em;
+  background: #f3f4f6;
+  border-radius: 9999px;
+  font-size: 0.75em;
+  line-height: 1;
+  min-height: 16px;
+}
+
+.jos-history-item img {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin-right: 0.25em;
+}
+
+.jos-option-title {
+  font-weight: 500;
+  font-size: 1.25em;
+}
+
+.jos-option-title-xl {
+  font-weight: 500;
+  font-size: 1.25em;
+  padding-top: 1em;
+  padding-bottom: 0.25em;
+}
+
+.jos-option-title-solo {
+  font-weight: 400;
+  font-size: 1.25em;
+  padding: 1em;
+}
+
+.jos-options {
+  display: grid;
+  gap: var(--grid-gap, 2em);
+  padding: 1em;
+  margin-top: 1em;
+  touch-action: pan-y; /* Only allow vertical scroll within options */
+  -webkit-overflow-scrolling: touch;
+}
+
+.jos-step-1-img {
+  height: 100px !important;
+  width: 100px !important;
+  margin-top: 0.5em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.jos-shape-img {
+  height: 75px;
+  width: 75px;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 0.5em;
+}
+
+/* ── Metal swatches (step 1) ── */
+.jos-metal-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 1em;
+  margin: 1em 0;
+}
+
+.jos-metal-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  padding: 0;
+}
+
+.jos-metal-btn:hover {
+  transform: scale(1.1);
+}
+
+.jos-metal-btn.active {
+  border: 2px solid #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.jos-metal-btn.active:after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid #2563eb;
+  border-radius: 50%;
+  opacity: 0.2;
+}
+
+/* ── Natural / Lab Grown toggle (step 2) ── */
+.jos-stone-type-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 0.25em;
+  margin: 1.5em auto;
+  padding: 0.25em;
+  background: #f3f4f6;
+  border-radius: 9999px;
+  width: fit-content;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.jos-stone-type-btn {
+  padding: 0.75em 1em;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.9em;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  font-family: inherit;
+  background: rgba(156, 163, 175, 0.1); /* neutral gray for non-active */
+  color: rgba(156, 163, 175, 0.8);
+  transform: scale(1);
+  transition: all 0.15s ease;
+}
+
+.jos-stone-type-btn.active {
+  background: rgba(34, 197, 94, 0.2); /* green for natural */
+  color: rgba(34, 165, 94, 0.9);
+}
+
+.jos-stone-type-btn[data-stone-type='lab'].active {
+  background: rgba(59, 130, 246, 0.15); /* blue for lab */
+  color: rgba(59, 130, 246, 0.9);
+}
+
+.jos-stone-type-btn:active {
+  transform: scale(0.95);
+}
+
+.jos-stone-type-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+
+.jos-options[data-stone-type='lab'] .jos-option {
+  color: rgba(44, 119, 241, 0.75);
+  transition: all 0.2s ease;
+}
+
+.jos-options[data-stone-type='natural'] .jos-option {
+  color: rgba(34, 165, 94, 0.9);
+  transition: all 0.2s ease;
+}
+
+/* ── Loading screen ── */
+.jos-loading {
+  position: fixed;
+  inset: 0;
+  background: #e4e5de;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483647 !important;
+}
+
+.jos-loading-container {
+  text-align: center;
+}
+
+.jos-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #000;
+  border-radius: 50%;
+  margin: 0 auto 1em;
+  animation: jos-spin2 1s linear infinite;
+  display: block !important;
+}
+
+.jos-loading-text {
+  color: #1a1a1a;
+  font-size: 1.25em;
+  margin-bottom: 1em;
+  font-family: -apple-system, system-ui, sans-serif;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease-out;
+}
+
+.jos-loading-progress {
+  width: 200px;
+  height: 4px;
+  background: #f3f3f3;
+  border-radius: 2px;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s ease-out;
+}
+
+.jos-progress-bar {
+  width: 0%;
+  height: 100%;
+  background: #000;
+  transition: width 0.3s ease;
+  display: block !important;
+}
+
+@keyframes jos-spin2 {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.jos-loading.show-content .jos-loading-text,
+.jos-loading.show-content .jos-loading-progress {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+#jos-main-logo {
+  height: 5em;
+  margin-left: auto;
+  margin-right: auto;
+  margin-bottom: 0.5em;
+}
+
+@media (min-width: 641px) {
+  .jos-options {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  }
+
+  .jos-options[data-grid='1x1'] {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .jos-options[data-grid='2x2'] {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  [data-grid='1x1'] .jos-option {
+    width: 400px;
+  }
+}
+
+@media (max-width: 640px) {
+  .jos-options {
+    grid-template-columns: var(--grid-cols, repeat(2, 1fr));
+    gap: var(--grid-gap, 1rem);
+  }
+
+  /* Force last item to span full width regardless of grid */
+  .jos-options .jos-option:last-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Tighter spacing for 3x3 grid */
+  [data-grid='3x3'] .jos-option {
+    padding: 0.5rem;
+  }
+
+  [data-grid='3x3'] .jos-option-title,
+  [data-grid='3x3'] .jos-option-title-solo {
+    font-size: 0.875em;
+  }
+
+  .jos-option-title-solo {
+    font-size: 16px;
+  }
+
+  [data-grid='3x3'] .jos-option-desc {
+    font-size: 0.75em;
+    line-height: 1.25;
+  }
+
+  .jos-option:active {
+    transform: scale(0.95);
+  }
+
+  /* Touch ripple effect */
+  .jos-option::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.5);
+    opacity: 0;
+    border-radius: 100%;
+    transform: scale(1, 1) translate(-50%);
+    transform-origin: 50% 50%;
+  }
+
+  .jos-option:active::after {
+    animation: jos-ripple 0.4s ease-out;
+  }
+
+  @keyframes jos-ripple {
+    0% {
+      transform: scale(0, 0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: scale(40, 40);
+      opacity: 0;
+    }
+  }
+
+  .jos-walkthrough {
+    backdrop-filter: blur(2.5px) !important;
+    -webkit-backdrop-filter: blur(2.5px) !important;
+  }
+}
+
+/* ── Location picker: state-grouped accordion (step 5) ── */
+.jos-location-picker {
+  max-width: 38em !important;
+  margin: 0 auto !important;
+  padding: 0 1.25em 2em !important;
+}
+
+.jos-state-group {
+  margin-bottom: 0.5em !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid rgba(180, 180, 175, 0.35) !important;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease !important;
+}
+
+.jos-state-group:hover {
+  border-color: rgba(140, 140, 135, 0.5) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06) !important;
+}
+
+.jos-state-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 1em 1.25em !important;
+  cursor: pointer !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  transition: background 0.2s ease !important;
+  width: 100% !important;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+}
+
+.jos-state-header:hover {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+.jos-state-header:active {
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+
+.jos-state-name {
+  font-weight: 600 !important;
+  font-size: 1em !important;
+  color: #1c1d1e !important;
+  letter-spacing: 0.01em !important;
+}
+
+.jos-state-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75em !important;
+}
+
+.jos-state-count {
+  font-size: 0.8em !important;
+  color: rgba(18, 18, 18, 0.45) !important;
+  font-weight: 500 !important;
+  background: rgba(18, 18, 18, 0.06) !important;
+  padding: 0.2em 0.6em !important;
+  border-radius: 9999px !important;
+}
+
+.jos-state-chevron {
+  width: 20px !important;
+  height: 20px !important;
+  color: rgba(18, 18, 18, 0.35) !important;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  flex-shrink: 0 !important;
+}
+
+.jos-state-group.expanded .jos-state-chevron {
+  transform: rotate(180deg) !important;
+}
+
+/* Smooth accordion using grid-template-rows trick */
+.jos-state-locations {
+  display: grid !important;
+  grid-template-rows: 0fr !important;
+  transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.jos-state-group.expanded .jos-state-locations {
+  grid-template-rows: 1fr !important;
+}
+
+.jos-state-locations-inner {
+  overflow: hidden !important;
+}
+
+.jos-loc-card {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 1em !important;
+  margin: 0.5em 0.75em 0.5em !important;
+  padding: 1em 1.15em !important;
+  border-radius: 10px !important;
+  border: 1px solid rgba(180, 180, 175, 0.25) !important;
+  background: rgba(255, 255, 255, 0.7) !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  position: relative !important;
+  width: calc(100% - 1.5em) !important;
+  text-align: left !important;
+  font-family: inherit;
+}
+
+.jos-loc-card:hover {
+  border-color: #1c1d1e !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+.jos-loc-card:active {
+  transform: scale(0.985) !important;
+  box-shadow: none !important;
+}
+
+.jos-loc-icon {
+  flex-shrink: 0 !important;
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 10px !important;
+  background: rgba(18, 18, 18, 0.04) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-top: 0.1em !important;
+}
+
+.jos-loc-icon svg {
+  width: 18px !important;
+  height: 18px !important;
+  color: rgba(18, 18, 18, 0.4) !important;
+}
+
+.jos-loc-details {
+  flex: 1 !important;
+  min-width: 0 !important;
+  display: block !important;
+}
+
+.jos-loc-name {
+  display: block !important;
+  font-weight: 600 !important;
+  font-size: 0.95em !important;
+  color: #1c1d1e !important;
+  margin-bottom: 0.3em !important;
+  line-height: 1.3 !important;
+}
+
+.jos-loc-address {
+  display: block !important;
+  font-size: 0.82em !important;
+  color: rgba(18, 18, 18, 0.5) !important;
+  line-height: 1.45 !important;
+  margin-bottom: 0.2em !important;
+}
+
+.jos-loc-hours {
+  display: block !important;
+  font-size: 0.78em !important;
+  color: rgba(18, 18, 18, 0.38) !important;
+  line-height: 1.4 !important;
+}
+
+.jos-loc-arrow {
+  flex-shrink: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+  color: rgba(18, 18, 18, 0.15) !important;
+  align-self: center !important;
+  transition: transform 0.2s ease, color 0.2s ease !important;
+}
+
+.jos-loc-card:hover .jos-loc-arrow {
+  color: rgba(18, 18, 18, 0.5) !important;
+  transform: translateX(2px) !important;
+}
+
+.jos-loc-decide-later {
+  display: block !important;
+  text-align: center !important;
+  margin-top: 1.25em !important;
+  padding: 0.85em 1.5em !important;
+  font-size: 0.9em !important;
+  color: rgba(18, 18, 18, 0.45) !important;
+  cursor: pointer !important;
+  border: 1px dashed rgba(180, 180, 175, 0.4) !important;
+  border-radius: 10px !important;
+  transition: all 0.2s ease !important;
+  background: transparent !important;
+  font-family: inherit !important;
+  width: 100% !important;
+}
+
+.jos-loc-decide-later:hover {
+  color: rgba(18, 18, 18, 0.7) !important;
+  border-color: rgba(18, 18, 18, 0.3) !important;
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+@keyframes josLocSlideIn {
+  from {
+    opacity: 0 !important;
+    transform: translateY(8px) !important;
+  }
+  to {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+  }
+}
+
+.jos-state-group.expanded .jos-loc-card {
+  animation: josLocSlideIn 0.3s ease both !important;
+}
+
+.jos-state-group.expanded .jos-loc-card:nth-child(1) { animation-delay: 0.04s !important; }
+.jos-state-group.expanded .jos-loc-card:nth-child(2) { animation-delay: 0.08s !important; }
+.jos-state-group.expanded .jos-loc-card:nth-child(3) { animation-delay: 0.12s !important; }
+.jos-state-group.expanded .jos-loc-card:nth-child(4) { animation-delay: 0.16s !important; }
+.jos-state-group.expanded .jos-loc-card:nth-child(5) { animation-delay: 0.2s !important; }
+.jos-state-group.expanded .jos-loc-card:nth-child(6) { animation-delay: 0.24s !important; }
+
+@media (max-width: 640px) {
+  .jos-location-picker {
+    padding: 0 0.75em 1.5em !important;
+  }
+
+  .jos-loc-card {
+    margin: 0 0.5em 0.4em !important;
+    padding: 0.85em 1em !important;
+  }
+
+  .jos-loc-icon {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .jos-loc-icon svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+
+  .jos-loc-card:active {
+    transform: scale(0.97) !important;
+  }
+
+  .jos-state-header {
+    padding: 0.85em 1em !important;
+  }
+}
+
+/* ── 3D designer container (replaces the customizer iframe) ── */
+.customizer-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1003;
+  background: white;
+  overscroll-behavior: none;
+}
+
+@media (min-width: 769px) {
+  .customizer-container {
+    top: 72px;
+    height: calc(100vh - 72px);
+  }
+}
+
+@media (min-width: 0px) and (max-width: 768px) {
+  .customizer-container {
+    top: 76px;
+    height: calc(100vh - 76px);
+  }
+}
