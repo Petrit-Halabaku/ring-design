@@ -205,9 +205,16 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
 
   return (
     <div className="customizer-container">
-      <div className="relative flex h-full w-full flex-col overflow-hidden bg-[linear-gradient(160deg,#f4f4f4_0%,#e9e9e9_45%,#dedede_100%)]">
+      <div className="relative flex h-full w-full flex-col overflow-hidden">
         {/* Ring stage — real GLB models, same pipeline as the original */}
         <div className="relative flex min-h-0 flex-1 items-center justify-center">
+          {/*
+            The vendor's studio sweep, applied exactly as their `.wrapper` rule does
+            (bottom-anchored, cover). The canvas above it is transparent, so this shows
+            through instead of a colour being drawn in WebGL.
+          */}
+          <div className="ring-stage-bg absolute inset-0" />
+
           <div className="absolute inset-0">
             <RingViewer
               stone={stone}

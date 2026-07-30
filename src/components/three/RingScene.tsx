@@ -13,11 +13,34 @@ import { stoneDimensionsAtCarat } from "@/lib/settings/geometry";
 import type { Stone } from "@/lib/settings/types";
 
 /**
- * Rebuild of the configurator's render pipeline.
+ * Rebuild of the configurator's render pipeline (react-three-fiber + drei).
  *
- * The original is react-three-fiber + drei: metal is MeshPhysicalMaterial lit by
- * `env_metal_flat.hdr`, and every diamond uses drei's MeshRefractionMaterial against
- * `diamond (1).hdr`. Both HDRs and the GLBs are the vendor's own assets, served from /public.
+ * How the stone is made to shine — the vendor's recipe, read out of their bundle:
+ *
+ *   1. `diamond (1).hdr` is loaded with `useLoader(RGBELoader, …)` and handed to drei's
+ *      MeshRefractionMaterial as `envMap`. The material ray-marches that environment
+ *      through a BVH of the stone's own geometry, so every facet refracts the surroundings.
+ *   2. The HDR is a photograph of a room — deep blue curtains, lamps, a bright window.
+ *      Median luminance 0.33, p99 14.9, peak 207. That range is the whole effect: a
+ *      refracted ray either lands on a lamp (a burst of fire) or on dark fabric, and the
+ *      contrast between them reads as sparkle. A flat studio HDR gives a lifeless blob.
+ *   3. Their exact numbers (DIAMOND_MATERIAL below). Two do the heavy lifting: `ior: 2.75`,
+ *      well above diamond's real 2.417, which exaggerates the bend; and an over-white
+ *      `color` of 1.85 that lifts exposure without washing the fire out.
+ *
+ * The vendor also uses drei's <CubeCamera resolution={256} frames={1}> — but only for pavé
+ * and halo melee, which need to reflect their immediate surroundings. The centre stone
+ * doesn't.
+ *
+ * One deviation, forced by a drei change: current drei only samples a raw equirect through
+ * a CubeUV atlas lookup (which expects a PMREM texture), so the HDR is projected onto a
+ * real cube target here to reach the plain `samplerCube` path. See useCubeEnv — getting the
+ * texture type and the mip chain right on that target is what separates a pale, brilliant
+ * stone from a dark navy one.
+ *
+ * Metal is MeshPhysicalMaterial lit by `env_metal_flat.hdr` (a flat 512² grey, uniform 1.4).
+ * The studio backdrop is a CSS background behind a transparent canvas, exactly as the
+ * original does it (`.wrapper`).
  *
  * Units: the vendor's models don't share one convention. The diamonds are authored at
  * 1 unit = 100mm (a 1ct round measures 0.064 × 0.0394, matching the API's 6.4 × 3.935mm)
@@ -31,20 +54,25 @@ import type { Stone } from "@/lib/settings/types";
  * driven by the real ring-size and band-width controls.
  */
 
-/** Kept for reference: the vendor lights stones with this one. */
-export const DIAMOND_HDR = "/hdr/diamond1.hdr";
+const DIAMOND_HDR = "/hdr/diamond1.hdr";
 const METAL_HDR = "/hdr/env_metal_flat.hdr";
 
 const CLAW_TIP_MODEL = "/models/ClawTip.glb";
 
 /**
- * The vendor ships `diamond (1).hdr` for stones, but on its own it is a dark, blue-cast
- * probe — the stone comes out navy, where their live render is neutral white. Their scene
- * composites it against a bright studio backdrop we don't have, so the stone is lit with
- * their neutral `env_metal_flat.hdr` instead and the exposure lifted slightly.
+ * The vendor's MeshRefractionMaterial settings. Everything is theirs verbatim except the
+ * exposure: they use an over-white 1.85, which lands pale on their equirect sampling path
+ * but reads dark through the cube projection this build has to use (see useCubeEnv). 3.1
+ * matches their on-screen result.
  */
-const STONE_HDR = METAL_HDR;
-const DIAMOND_EXPOSURE = new THREE.Color(1.15, 1.15, 1.15);
+const DIAMOND_MATERIAL = {
+  bounces: 3,
+  aberrationStrength: 0.01,
+  ior: 2.75,
+  fresnel: 1,
+  color: new THREE.Color(3.1, 3.1, 3.1),
+  fastChroma: true,
+} as const;
 
 /** US ring size → inner diameter in millimetres. */
 const innerDiameterMm = (usSize: number) => 11.63 + 0.8128 * usSize;
@@ -79,9 +107,10 @@ function useMetalMaterial(color: string) {
 }
 
 /**
- * drei's MeshRefractionMaterial ray-marches a cube map, so the equirectangular HDR has to
- * be projected onto one first — handing it the flat texture samples the wrong direction
- * and the stone comes out dark.
+ * MeshRefractionMaterial has two sampling paths: a plain `samplerCube` when handed a
+ * CubeTexture, or a CubeUV atlas lookup otherwise — the latter expects a PMREM-processed
+ * texture, so a raw equirectangular HDR gets read as an atlas and comes out as coloured
+ * mush. Projecting the HDR onto a real cube target puts it on the well-defined path.
  */
 function useCubeEnv(file: string) {
   const equirect = useEnvironment({ files: file });
@@ -89,6 +118,17 @@ function useCubeEnv(file: string) {
 
   return useMemo(() => {
     const target = new THREE.WebGLCubeRenderTarget(512);
+    // WebGLCubeRenderTarget defaults to an 8-bit texture. This probe peaks at 207, so
+    // writing it to 8 bits crushes everything into 0..1 — the stone renders navy with
+    // clipped speckles instead of pale ice-white. drei's own CubeCamera sets this too.
+    target.texture.type = THREE.HalfFloatType;
+    // No mip chain on purpose. The shader samples with screen-space gradients, so at the
+    // size the stone actually occupies, mips average this probe's tiny bright lamps into
+    // the dark curtains around them — the fire disappears and the stone goes flat and
+    // muddy. Sampling the base level keeps the highlight contrast that reads as sparkle.
+    target.texture.generateMipmaps = false;
+    target.texture.minFilter = THREE.LinearFilter;
+    target.texture.magFilter = THREE.LinearFilter;
     target.fromEquirectangularTexture(gl, equirect);
     return target.texture;
   }, [gl, equirect]);
@@ -109,7 +149,7 @@ function meshBounds(meshes: ReturnType<typeof useGlbMeshes>) {
 
 function CenterStone({ stone, model, carat }: { stone: Stone; model: string; carat: number }) {
   const meshes = useGlbMeshes(model);
-  const env = useCubeEnv(STONE_HDR);
+  const envMap = useCubeEnv(DIAMOND_HDR);
   const dims = stoneDimensionsAtCarat(stone, carat);
 
   // Rather than trusting each GLB's unit convention (the diamonds are authored at
@@ -132,13 +172,8 @@ function CenterStone({ stone, model, carat }: { stone: Stone; model: string; car
           matrix={m.matrix}
         >
           <MeshRefractionMaterial
-            envMap={env}
-            bounces={4}
-            ior={2.4}
-            fresnel={0.15}
-            aberrationStrength={0.015}
-            color={DIAMOND_EXPOSURE}
-            fastChroma
+            envMap={envMap}
+            {...DIAMOND_MATERIAL}
             toneMapped={false}
           />
         </mesh>
@@ -219,14 +254,15 @@ export default function RingScene({
   bandWidthMm = 1.8,
   prongCount = 4,
 }: SceneProps) {
-  // Frame on the stone: the whole ring is ~20mm tall, the stone sits at the top.
+  // The ring stands ~20mm tall with the stone on top; this framing keeps both in view.
+  // The canvas is transparent so the studio backdrop behind it shows through, matching
+  // the original's `.wrapper` CSS background.
   return (
     <Canvas
       camera={{ fov: 30, position: [0, 2, 52], near: 0.5, far: 500 }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}
+      gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping }}
       dpr={[1, 2]}
     >
-      <color attach="background" args={["#ececeb"]} />
       <ambientLight intensity={0.4} />
       <directionalLight position={[20, 30, 25]} intensity={1.2} />
       <directionalLight position={[-20, 10, -15]} intensity={0.5} />
