@@ -1,15 +1,5 @@
 # Custom Ring Builder — Next.js copy
 
-A Next.js reproduction of
-[casalejewelers.net/custom-ring-builder](https://www.casalejewelers.net/custom-ring-builder/).
-
-```bash
-npm run dev
-```
-
-Then open [/custom-ring-builder](http://localhost:3000/custom-ring-builder).
-
-## What the original page is
 
 Three layers stacked on one URL:
 
