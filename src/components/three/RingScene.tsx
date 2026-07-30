@@ -9,8 +9,24 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { useGlbMeshes } from "./useGlbMeshes";
-import { drawable, PRONG_ARMS, readAnchors } from "./prongParts";
+import {
+  bakeToMillimetres,
+  drawable,
+  middleModel,
+  PRONG_BOTTOM,
+  readAnchors,
+} from "./prongParts";
 import { stoneDimensionsAtCarat } from "@/lib/settings/geometry";
+import {
+  MIDDLE_SPANS,
+  MIDDLE_SPANS_PAVE,
+  PRONG_CLEARANCE,
+  PRONG_SEAT,
+  prongASides,
+  prongWidthAtCarat,
+  solveProngArm,
+  splitProngArm,
+} from "@/lib/settings/prongGeometry";
 import type { Stone } from "@/lib/settings/types";
 
 /**
@@ -58,7 +74,9 @@ import type { Stone } from "@/lib/settings/types";
 const DIAMOND_HDR = "/hdr/diamond1.hdr";
 const METAL_HDR = "/hdr/env_metal_flat.hdr";
 
-const PAVE_MODEL = "/models/DiamondPave.glb";
+// Prong pavé is not a separate pass: the configurator carries the melee inside the arm
+// itself, as `diamondmesh…` meshes in `Middle{n}Pave.glb`. `DiamondPave.glb` is only used
+// for band and halo pavé.
 
 /**
  * The vendor's MeshRefractionMaterial settings. Everything is theirs verbatim except
@@ -107,13 +125,13 @@ export type SceneProps = {
   bandWidthMm?: number;
   /** Prong azimuths in radians, from lib/settings/prongs. */
   prongAngles?: number[];
+  /** Layout name ("4 Classic", "6 Prong", …). Picks the head's radial seats. */
+  prongCountType?: string;
   /** Local path to the selected prong tip's GLB. */
   prongTipModel?: string;
   /** Prongs can take a different metal from the band (the configurator's "Mixed"). */
   prongMetalColor?: string;
   prongPave?: boolean;
-  /** Local path to the prong arm's GLB. */
-  prongArmModel?: string;
 };
 
 function useMetalMaterial(color: string) {
@@ -280,7 +298,18 @@ function useMillimetreGeometries(
   return geometries;
 }
 
-function CenterStone({ stone, model, carat }: { stone: Stone; model: string; carat: number }) {
+function CenterStone({
+  stone,
+  model,
+  carat,
+  baseY,
+}: {
+  stone: Stone;
+  model: string;
+  carat: number;
+  /** Culet height, from the head solve — the prongs and the stone have to agree on it. */
+  baseY: number;
+}) {
   const meshes = useGlbMeshes(model);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
 
@@ -298,7 +327,7 @@ function CenterStone({ stone, model, carat }: { stone: Stone; model: string; car
   }, [geometries]);
 
   return (
-    <group scale={caratScale} position={[0, lift * caratScale, 0]}>
+    <group scale={caratScale} position={[0, baseY + lift * caratScale, 0]}>
       {geometries.map((g, i) => (
         <mesh key={`${model}-${i}`} geometry={g}>
           <MeshRefractionMaterial
@@ -312,160 +341,236 @@ function CenterStone({ stone, model, carat }: { stone: Stone; model: string; car
   );
 }
 
+/** A part with its node transform baked in, so it measures millimetres along +y. */
+function useBakedParts(model: string) {
+  const meshes = useGlbMeshes(model);
+  const parts = useMemo(() => bakeToMillimetres(meshes), [meshes]);
+  useLayoutEffect(
+    () => () => parts.forEach((p) => p.geometry.dispose()),
+    [parts],
+  );
+  return parts;
+}
+
 /**
- * Pavé on the prong.
- *
- * The vendor sets these into the prong *arm* and boolean-subtracts the seats with
- * `BottomPaveManufacturingCSG.glb`. That arm model (`StraightRoundArm.glb`) is the one
- * asset of theirs that isn't publicly readable — both buckets return 403 — so the arm
- * itself isn't reproduced and these melee are laid down the prong's outer face instead of
- * being seated in it. The stones themselves are their real `DiamondPave.glb`.
+ * Stretches `Bottom.glb` along +y to `length`, the way the configurator does it: every
+ * vertex past the stalk's natural 0.55 shoulder is snapped to the new end. Normals are left
+ * alone deliberately — the stalk is prismatic, so they stay correct under the stretch.
  */
-function ProngPave({
-  stone,
-  carat,
-  color,
+function useStretchedBottom(
+  parts: ReturnType<typeof useGlbMeshes>,
+  length: number,
+) {
+  const geometries = useMemo(
+    () =>
+      drawable(parts).map((m) => {
+        const geometry = m.geometry.clone();
+        const attribute = geometry.attributes.position as THREE.BufferAttribute;
+        const array = attribute.array as Float32Array;
+        for (let i = 1; i < array.length; i += 3) {
+          if (array[i] > 0.5) array[i] = length;
+        }
+        attribute.needsUpdate = true;
+        geometry.computeBoundingBox();
+        return geometry;
+      }),
+    [parts, length],
+  );
+
+  useLayoutEffect(
+    () => () => geometries.forEach((g) => g.dispose()),
+    [geometries],
+  );
+  return geometries;
+}
+
+/** Pavé melee are carried inside the `Middle{n}Pave` arms, named `diamondmesh…`. */
+const isMelee = (name: string) => name.startsWith("diamondmesh");
+
+/**
+ * A single prong: a stretched `Bottom`, a whole-segment `Middle{n}`, and a tip — stacked
+ * along +y, then leaned out from the ring axis.
+ */
+function Prong({
+  solve,
+  prongWidth,
+  mountY,
+  tipModel,
+  metal,
+  pave,
 }: {
-  stone: Stone;
-  carat: number;
-  color: string;
+  solve: ProngSolve;
+  prongWidth: number;
+  mountY: number;
+  tipModel: string;
+  metal: THREE.Material;
+  pave: boolean;
 }) {
-  const meshes = useGlbMeshes(PAVE_MODEL);
+  const bottomParts = useBakedParts(PRONG_BOTTOM);
+  const middleParts = useBakedParts(middleModel(solve.segments, pave));
+  const tipParts = useBakedParts(tipModel);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
-  const dims = stoneDimensionsAtCarat(stone, carat);
-  void color;
 
-  // Melee are the worst case for the object-space epsilons described on
-  // useMillimetreGeometries: raw, this model is 0.008 units across, so drei's 0.01
-  // inter-bounce offset is nearly twice the stone's own depth and no ray survives a
-  // single bounce. Baking the node transform puts object space in millimetres.
-  const geometries = useMillimetreGeometries(meshes);
+  const bottom = useStretchedBottom(bottomParts, solve.bottomLength);
+  const middleAnchor = useMemo(() => readAnchors(middleParts), [middleParts]);
+  const tipAnchor = useMemo(() => readAnchors(tipParts), [tipParts]);
 
-  // The melee are cut at a fixed size; three of them run down the prong below the girdle.
-  const radius = dims.width / 2;
-  const seats = [-0.55, -0.95, -1.35];
+  // Every part carries its own join locators, so the whole alignment is just sliding each
+  // one until its bottom pointer meets the top pointer of the part beneath it.
+  const middleY = solve.bottomLength - middleAnchor.bottom;
+  const tipY = middleY + middleAnchor.top - tipAnchor.bottom;
+
+  // YXZ is load-bearing. The lean has to be applied *before* the azimuth: under the default
+  // XYZ order the azimuth spins around +y first and leaves the lean pointing the same way in
+  // world space for every prong, so they all fall toward one side instead of splaying out
+  // along their own radii.
+  const rotation = useMemo(
+    () => new THREE.Euler(-solve.tilt, solve.azimuth, 0, "YXZ"),
+    [solve.tilt, solve.azimuth],
+  );
 
   return (
-    <>
-      {seats.map((y, i) => (
-        <group key={i} position={[0, y, radius - 0.18]} scale={0.62}>
-          {geometries.map((g, j) => (
-            <mesh key={`pave-${j}`} geometry={g}>
+    <group position={[0, mountY, 0]} rotation={rotation} scale={prongWidth}>
+      {bottom.map((geometry, i) => (
+        <mesh key={`bottom-${i}`} geometry={geometry} material={metal} />
+      ))}
+
+      <group position={[0, middleY, 0]}>
+        {drawable(middleParts).map((m, i) =>
+          isMelee(m.name) ? (
+            <mesh key={`melee-${i}`} geometry={m.geometry}>
               <MeshRefractionMaterial
                 envMap={envMap}
                 {...DIAMOND_MATERIAL}
                 toneMapped={false}
               />
             </mesh>
-          ))}
-        </group>
-      ))}
-    </>
+          ) : (
+            <mesh key={`middle-${i}`} geometry={m.geometry} material={metal} />
+          ),
+        )}
+      </group>
+
+      <group position={[0, tipY, 0]}>
+        {drawable(tipParts).map((m, i) => (
+          <mesh key={`tip-${i}`} geometry={m.geometry} material={metal} />
+        ))}
+      </group>
+    </group>
   );
 }
 
+type ProngSolve = {
+  /** Azimuth around the ring axis, radians. */
+  azimuth: number;
+  /** Lean away from vertical, radians. */
+  tilt: number;
+  /** Which `Middle{n}` this arm needs. */
+  segments: number;
+  /** How far `Bottom` is stretched to make up the remainder, authored units. */
+  bottomLength: number;
+};
+
+type HeadLayout = {
+  prongWidth: number;
+  /** Height of the prongs' seat on the band. */
+  mountY: number;
+  /** Height of the stone's culet. Same calculation — the stone rides on the tallest arm. */
+  stoneY: number;
+  prongs: ProngSolve[];
+};
+
 /**
- * The prong head, assembled the way the configurator builds it.
+ * Solves the head the way the configurator does.
  *
- * A prong is an arm plus a tip. Both are authored in a shared space where y runs up the
- * prong, z runs radially outward and x is the prong's width, and both carry `*Pointer*`
- * locators marking where they join. So the arm is stretched until its top pointer sits on
- * the stone's girdle, the tip is slid up to meet it, and the pair is swung out to the
- * girdle radius and repeated at each azimuth from the vendor's per-shape angle table.
+ * The thing to understand, and the thing this build previously got wrong: **prongs are not
+ * stood up at the girdle radius.** Every one is seated on the ring axis at the top of the
+ * band and then leaned outward until its face meets the girdle. That lean is what makes the
+ * arms converge into the V beneath the stone — the defining line of a solitaire head. Put
+ * them at the girdle radius instead and you get four parallel posts.
+ *
+ * Stone height falls out of the same solve: the culet sits one clearance above the seat,
+ * plus the rise of the tallest arm.
  */
+function useHeadLayout(
+  stone: Stone,
+  carat: number,
+  angles: number[],
+  countType: string,
+  bandWidthMm: number,
+  pave: boolean,
+): HeadLayout {
+  return useMemo(() => {
+    const dims = stoneDimensionsAtCarat(stone, carat);
+    const prongWidth = prongWidthAtCarat(carat);
+
+    // The vendor measures from the ring centre: inner radius + band thickness − seat. This
+    // shank is a torus centred at −meanRadius, so that same face is just the tube radius.
+    // The seat term sinks the prong's base into the metal rather than perching it on top.
+    const mountY = bandWidthMm / 2 - PRONG_SEAT * prongWidth;
+
+    const aSides = prongASides(
+      stone.name,
+      countType,
+      angles,
+      dims.length,
+      dims.width,
+    );
+    const spans = pave ? MIDDLE_SPANS_PAVE : MIDDLE_SPANS;
+
+    const arms = angles.map((azimuth, i) => {
+      const arm = solveProngArm(
+        aSides[i],
+        PRONG_CLEARANCE,
+        prongWidth,
+        dims.pavHeight,
+      );
+      const parts = splitProngArm(
+        arm.armLength,
+        prongWidth,
+        arm.angleOfApproach,
+        spans,
+      );
+      return { azimuth, rise: arm.bSide, parts };
+    });
+
+    const tallest = arms.reduce((most, a) => Math.max(most, a.rise), 0);
+
+    return {
+      prongWidth,
+      mountY,
+      stoneY: mountY + PRONG_CLEARANCE + tallest,
+      prongs: arms.map((a) => ({ azimuth: a.azimuth, ...a.parts })),
+    };
+  }, [stone, carat, angles, countType, bandWidthMm, pave]);
+}
+
 function Prongs({
-  stone,
-  carat,
+  layout,
   color,
-  angles,
   tipModel,
-  armModel,
   pave,
 }: {
-  stone: Stone;
-  carat: number;
+  layout: HeadLayout;
   color: string;
-  angles: number[];
   tipModel: string;
-  armModel: string;
   pave: boolean;
 }) {
-  const tipParts = useGlbMeshes(tipModel);
-  const armParts = useGlbMeshes(armModel);
   const metal = useMetalMaterial(color);
-  const dims = stoneDimensionsAtCarat(stone, carat);
-
-  const tipMeshes = useMemo(() => drawable(tipParts), [tipParts]);
-  const armMeshes = useMemo(() => drawable(armParts), [armParts]);
-  const tipAnchor = useMemo(() => readAnchors(tipParts), [tipParts]);
-  const armAnchor = useMemo(() => readAnchors(armParts), [armParts]);
-
-  const widthScale = dims.width / stone.dimensions.width;
-
-  // The arm has to reach from the base of the head up to the girdle. Stretching it along
-  // its own axis is what the vendor's arm calculation does — a taller stone gets a taller
-  // prong, not a bigger one.
-  const armSpan = armAnchor.top - armAnchor.bottom;
-  const armStretch = armSpan > 0 ? dims.pavHeight / armSpan : 1;
-  // Where the arm's top pointer ends up once stretched, and therefore where the tip goes.
-  const jointY = (armAnchor.top - armAnchor.bottom) * armStretch;
-
-  /**
-   * The stone's outline radius at a given azimuth, treating it as an ellipse with the
-   * length along +Z (θ=0, where the parts are authored) and the width across +X. A round
-   * gives back width/2 at every angle; an oval or marquise pushes the end prongs out to the
-   * point, which is what keeps them on the girdle instead of floating over the table.
-   */
-  function outlineRadius(theta: number) {
-    const a = dims.length / 2;
-    const b = dims.width / 2;
-    const s = Math.sin(theta);
-    const c = Math.cos(theta);
-    return (a * b) / Math.sqrt((b * c) ** 2 + (a * s) ** 2);
-  }
 
   return (
     <>
-      {angles.map((angle, i) => {
-        // Sit the prong's own axis on the girdle, allowing for where its locator sits.
-        const radial = outlineRadius(angle) - tipAnchor.radial * widthScale;
-        return (
-          <group key={i} rotation={[0, angle, 0]}>
-            <group position={[0, 0, radial]} scale={[widthScale, 1, widthScale]}>
-              {/* Arm: stretched vertically so its top lands on the girdle. */}
-              <group
-                position={[0, -armAnchor.bottom * armStretch, 0]}
-                scale={[1, armStretch, 1]}
-              >
-                {armMeshes.map((m, j) => (
-                  <mesh
-                    key={`arm-${m.name}-${j}`}
-                    geometry={m.geometry}
-                    material={metal}
-                    matrixAutoUpdate={false}
-                    matrix={m.matrix}
-                  />
-                ))}
-              </group>
-
-              {/* Tip: slid up so its own pointer meets the arm's. */}
-              <group position={[0, jointY - tipAnchor.bottom, 0]}>
-                {tipMeshes.map((m, j) => (
-                  <mesh
-                    key={`tip-${m.name}-${j}`}
-                    geometry={m.geometry}
-                    material={metal}
-                    matrixAutoUpdate={false}
-                    matrix={m.matrix}
-                  />
-                ))}
-              </group>
-
-              {pave && <ProngPave stone={stone} carat={carat} color={color} />}
-            </group>
-          </group>
-        );
-      })}
+      {layout.prongs.map((solve, i) => (
+        <Prong
+          key={i}
+          solve={solve}
+          prongWidth={layout.prongWidth}
+          mountY={layout.mountY}
+          tipModel={tipModel}
+          metal={metal}
+          pave={pave}
+        />
+      ))}
     </>
   );
 }
@@ -498,11 +603,20 @@ export default function RingScene({
   ringSize = 6.5,
   bandWidthMm = 1.8,
   prongAngles = [],
+  prongCountType = "4 Classic",
   prongTipModel = "/models/ClawTip.glb",
   prongMetalColor,
   prongPave = false,
-  prongArmModel = PRONG_ARMS.middle4,
 }: SceneProps) {
+  const head = useHeadLayout(
+    stone,
+    carat,
+    prongAngles,
+    prongCountType,
+    bandWidthMm,
+    prongPave,
+  );
+
   // The ring stands ~20mm tall with the stone on top; this framing keeps both in view.
   // The canvas is transparent so the studio backdrop behind it shows through, matching
   // the original's `.wrapper` CSS background.
@@ -519,14 +633,16 @@ export default function RingScene({
       <Suspense fallback={null}>
         <group position={[0, 5, 0]}>
           <Shank color={metalColor} ringSize={ringSize} bandWidthMm={bandWidthMm} />
-          <CenterStone stone={stone} model={stoneModel} carat={carat} />
-          <Prongs
+          <CenterStone
             stone={stone}
+            model={stoneModel}
             carat={carat}
+            baseY={head.stoneY}
+          />
+          <Prongs
+            layout={head}
             color={prongMetalColor ?? metalColor}
-            angles={prongAngles}
             tipModel={prongTipModel}
-            armModel={prongArmModel}
             pave={prongPave}
           />
         </group>

@@ -294,6 +294,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               ringSize={ringSize}
               bandWidthMm={bandWidth}
               prongAngles={angles}
+              prongCountType={activeProngCount}
               prongTipModel={prongTipModel(prongTip)}
               prongMetalColor={prongMetal.material.color}
               prongPave={prongPave}
