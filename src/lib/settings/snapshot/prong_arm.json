@@ -1,1 +1,47 @@
-[{"_id":"65c0ed6c496b694e546f46c5","type":"Arm","value":"Lotus","glbUrl":"https://stonealgo-configurator.s3.amazonaws.com/glb/Cube.glb","meshes":[{"name":"LotusArm","type":"Mesh","_id":"65c0ed6c496b694e546f46c6"}],"uiValue":"Lotus","description":"Lotus Prong Arms"},{"_id":"65c0ed6b496b694e546f46bf","type":"Arm","value":"Straight","glbUrl":"https://stonealgo-configurator.s3.amazonaws.com/glb/StraightRoundArm.glb","meshes":[{"name":"StraightArm","type":"Mesh","_id":"65c0ed6b496b694e546f46c0"}],"uiValue":"Straight","description":"Straight Prong Arms"},{"_id":"65c0ed6c496b694e546f46c2","type":"Arm","value":"Graduated","glbUrl":"https://stonealgo-configurator.s3.amazonaws.com/glb/Cube.glb","meshes":[{"name":"GraduatedArm","type":"Mesh","_id":"65c0ed6c496b694e546f46c3"}],"uiValue":"Graduated","description":"Graduated Prong Arms"}]
+[
+  {
+    "_id": "65c0ed6c496b694e546f46c5",
+    "type": "Arm",
+    "value": "Lotus",
+    "glbUrl": "https://stonealgo-configurator.s3.amazonaws.com/glb/Cube.glb",
+    "meshes": [
+      {
+        "name": "LotusArm",
+        "type": "Mesh",
+        "_id": "65c0ed6c496b694e546f46c6"
+      }
+    ],
+    "uiValue": "Lotus",
+    "description": "Lotus Prong Arms"
+  },
+  {
+    "_id": "65c0ed6b496b694e546f46bf",
+    "type": "Arm",
+    "value": "Straight",
+    "glbUrl": "https://stonealgo-configurator.s3.amazonaws.com/glb/StraightRoundArm.glb",
+    "meshes": [
+      {
+        "name": "StraightArm",
+        "type": "Mesh",
+        "_id": "65c0ed6b496b694e546f46c0"
+      }
+    ],
+    "uiValue": "Straight",
+    "description": "Straight Prong Arms"
+  },
+  {
+    "_id": "65c0ed6c496b694e546f46c2",
+    "type": "Arm",
+    "value": "Graduated",
+    "glbUrl": "https://stonealgo-configurator.s3.amazonaws.com/glb/Cube.glb",
+    "meshes": [
+      {
+        "name": "GraduatedArm",
+        "type": "Mesh",
+        "_id": "65c0ed6c496b694e546f46c3"
+      }
+    ],
+    "uiValue": "Graduated",
+    "description": "Graduated Prong Arms"
+  }
+]
