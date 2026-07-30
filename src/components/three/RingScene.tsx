@@ -147,30 +147,77 @@ function meshBounds(meshes: ReturnType<typeof useGlbMeshes>) {
   return box;
 }
 
+/**
+ * Bakes each mesh's node transform *and* the millimetre conversion into a cloned geometry,
+ * so the stone's object space is millimetres at 1ct and the model matrix is left carrying
+ * only the carat factor.
+ *
+ * This is load-bearing, not tidiness. MeshRefractionMaterial ray-marches in the geometry's
+ * own object space, and the epsilons involved are absolute lengths in that space:
+ * three-mesh-bvh accepts any triangle with `dist + 1e-5 >= 0` and keeps the numerically
+ * smallest `dist` with no lower bound, so a facet up to 1e-5 *behind* the ray origin is
+ * returned as the nearest hit. drei seeds the ray with a world-space nudge of 0.001 and
+ * then divides it by the model matrix, so it lands in object space as 0.001 / scale.
+ *
+ * The diamond GLBs are authored at 1 unit = 100mm with their 1ct size baked in, which puts
+ * `scale` at 100 × carat^W — passing through exactly 100 at exactly 1.00ct. So the nudge
+ * arrives as exactly 1e-5 at 1ct and falls *under* the BVH's epsilon above it: the ray
+ * self-intersects the facet it started on, `max(dist - 0.001, 0.0)` clamps it back to its
+ * own origin, and all three bounces are consumed without ever entering the stone. Every
+ * pixel then samples nearly the same environment direction and the stone renders as flat
+ * milky white. Round/Oval/Princess/Pear/Marquise/Asscher all break at 1.00ct, Cushion at
+ * 1.15, Radiant at 1.21; Emerald is authored in millimetres and never breaks.
+ *
+ * With the conversion baked in, object space is millimetres, the carat factor stays in
+ * ~0.8–1.4, and the nudge holds at ~7e-4 — two orders of magnitude clear of the epsilon.
+ * It also puts drei's 0.01 inter-bounce offset at 0.01mm rather than a quarter of the
+ * stone's depth, so the pavilion actually gets traversed.
+ *
+ * Baking once per model (not per carat) also keeps the geometry identity stable while the
+ * slider moves: drei builds its BVH in a mount-time effect and never rebuilds it, so a
+ * geometry that changed with carat would leave the BVH stale.
+ */
+function useMillimetreGeometries(meshes: ReturnType<typeof useGlbMeshes>, widthMm: number) {
+  const geometries = useMemo(() => {
+    const box = meshBounds(meshes);
+    const size = box.getSize(new THREE.Vector3());
+    const toMm = size.x > 0 ? widthMm / size.x : 1;
+    const scaleToMm = new THREE.Matrix4().makeScale(toMm, toMm, toMm);
+
+    return meshes.map((m) => {
+      const g = m.geometry.clone();
+      g.applyMatrix4(m.matrix);
+      g.applyMatrix4(scaleToMm);
+      g.computeBoundingBox();
+      return g;
+    });
+  }, [meshes, widthMm]);
+
+  useLayoutEffect(() => () => geometries.forEach((g) => g.dispose()), [geometries]);
+  return geometries;
+}
+
 function CenterStone({ stone, model, carat }: { stone: Stone; model: string; carat: number }) {
   const meshes = useGlbMeshes(model);
   const envMap = useCubeEnv(DIAMOND_HDR);
-  const dims = stoneDimensionsAtCarat(stone, carat);
 
-  // Rather than trusting each GLB's unit convention (the diamonds are authored at
-  // 1 unit = 100mm, the metal parts at 1 unit = 1mm), measure the model and scale it
-  // to the millimetre width the API reports for this stone at this carat.
-  const { scale, lift } = useMemo(() => {
-    const box = meshBounds(meshes);
-    const size = box.getSize(new THREE.Vector3());
-    const s = size.x > 0 ? dims.width / size.x : 1;
-    return { scale: s, lift: -box.min.y * s };
-  }, [meshes, dims.width]);
+  // Baked at the stone's 1ct millimetre size, so this is stable across carat changes.
+  const geometries = useMillimetreGeometries(meshes, stone.dimensions.width);
+
+  // All that's left for the model matrix: how much bigger this carat is than 1ct.
+  const caratScale =
+    stoneDimensionsAtCarat(stone, carat).width / stone.dimensions.width;
+
+  const lift = useMemo(() => {
+    const box = new THREE.Box3();
+    geometries.forEach((g) => g.boundingBox && box.union(g.boundingBox));
+    return -box.min.y;
+  }, [geometries]);
 
   return (
-    <group scale={scale} position={[0, lift, 0]}>
-      {meshes.map((m, i) => (
-        <mesh
-          key={`${m.name}-${i}`}
-          geometry={m.geometry}
-          matrixAutoUpdate={false}
-          matrix={m.matrix}
-        >
+    <group scale={caratScale} position={[0, lift * caratScale, 0]}>
+      {geometries.map((g, i) => (
+        <mesh key={`${model}-${i}`} geometry={g}>
           <MeshRefractionMaterial
             envMap={envMap}
             {...DIAMOND_MATERIAL}
