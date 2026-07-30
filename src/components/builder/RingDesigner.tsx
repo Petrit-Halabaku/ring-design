@@ -8,6 +8,17 @@ import {
   localModelUrl,
   SHAPE_TO_STONE_NAME,
 } from "@/lib/settings/models";
+import {
+  DEFAULT_PRONG_COUNT,
+  DEFAULT_PRONG_TIP,
+  PRONG_TIPS,
+  prongAngles,
+  prongCountsFor,
+  prongTipModel,
+  resolveProngCount,
+  type ProngCount,
+  type ProngTipId,
+} from "@/lib/settings/prongs";
 import type { RingSettings } from "@/lib/settings/types";
 
 /**
@@ -24,29 +35,6 @@ type Group = { label: string; hint?: string; choices: Choice[]; selected: number
 type Panel = { id: string; label: string; icon: string; groups: Group[] };
 
 const STATIC_PANELS: Panel[] = [
-  {
-    id: "head",
-    label: "Head",
-    icon: "M12 3l3 5H9zM5 10h14l-7 11z",
-    groups: [
-      {
-        label: "Prong Count",
-        hint: "4 Prong Classic Setting",
-        selected: 0,
-        choices: [
-          { label: "4 Classic" },
-          { label: "4 Compass" },
-          { label: "6 Prong" },
-        ],
-      },
-      {
-        label: "Prong Pave",
-        hint: "Plain prong arms",
-        selected: 0,
-        choices: [{ label: "None" }, { label: "Pave" }],
-      },
-    ],
-  },
   {
     id: "band",
     label: "Band",
@@ -99,6 +87,7 @@ const STATIC_PANELS: Panel[] = [
   },
 ];
 
+const HEAD_ICON = "M12 3l3 5H9zM5 10h14l-7 11z";
 const METAL_ICON = "M12 2l4 6-4 14L8 8z";
 const DIAMOND_ICON = "M6 3h12l4 6-10 12L2 9z";
 
@@ -116,6 +105,11 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   const [ringSize, setRingSize] = useState(6.5);
   const [engraving, setEngraving] = useState("");
   const [carat, setCarat] = useState(initialCarat ?? 1);
+  const [prongCount, setProngCount] = useState<ProngCount>(DEFAULT_PRONG_COUNT);
+  const [prongTip, setProngTip] = useState<ProngTipId>(DEFAULT_PRONG_TIP);
+  const [prongPave, setProngPave] = useState(false);
+  // null = prongs follow the band. The configurator calls a split "Mixed".
+  const [prongMetalIdx, setProngMetalIdx] = useState<number | null>(null);
 
   const [stoneIdx, setStoneIdx] = useState(() => {
     const wanted = shapeId ? SHAPE_TO_STONE_NAME[shapeId] : "Round";
@@ -149,6 +143,20 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   const stone = stones[stoneIdx] ?? stones[0] ?? SNAPSHOT.stones[0];
   const metal = settings.metals[metalIdx] ?? SNAPSHOT.metals[0];
   const caratRange = settings.caratWeights.solitaire.center;
+
+  // Layouts depend on the shape: a marquise only takes six prongs, a princess only four,
+  // and a pear takes three or five. Keep the selection valid as the shape changes.
+  const prongCountOptions = useMemo(
+    () => prongCountsFor(stone, carat),
+    [stone, carat],
+  );
+  const activeProngCount = resolveProngCount(stone, carat, prongCount);
+  const angles = useMemo(
+    () => prongAngles(stone, carat, activeProngCount),
+    [stone, carat, activeProngCount],
+  );
+  const prongMetal =
+    prongMetalIdx === null ? metal : (settings.metals[prongMetalIdx] ?? metal);
 
   const panels: Panel[] = useMemo(
     () => [
@@ -184,9 +192,64 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           },
         ],
       },
+      {
+        id: "head",
+        label: "Head",
+        icon: HEAD_ICON,
+        groups: [
+          {
+            label: "Prong Count",
+            hint: `${angles.length} prong ${activeProngCount} setting`,
+            selected: Math.max(0, prongCountOptions.indexOf(activeProngCount)),
+            choices: prongCountOptions.map((c) => ({ label: c })),
+          },
+          {
+            label: "Prong Tips",
+            hint: `${prongTip} Prong Tips`,
+            selected: Math.max(
+              0,
+              PRONG_TIPS.findIndex((t) => t.id === prongTip),
+            ),
+            choices: PRONG_TIPS.map((t) => ({ label: t.label })),
+          },
+          {
+            label: "Prong Pave",
+            hint: prongPave ? "Pave prong arms" : "Plain prong arms",
+            selected: prongPave ? 1 : 0,
+            choices: [{ label: "None" }, { label: "Pave" }],
+          },
+          {
+            label: "Prong Metal",
+            hint:
+              prongMetalIdx === null
+                ? "Matches the band"
+                : prongMetal.description,
+            selected: prongMetalIdx === null ? 0 : prongMetalIdx + 1,
+            choices: [
+              { label: "Match Band" },
+              ...settings.metals.map((m) => ({ label: m.uiValue })),
+            ],
+          },
+        ],
+      },
       ...STATIC_PANELS,
     ],
-    [settings.metals, stones, metal, metalIdx, stone, stoneIdx, carat],
+    [
+      settings.metals,
+      stones,
+      metal,
+      metalIdx,
+      stone,
+      stoneIdx,
+      carat,
+      angles.length,
+      activeProngCount,
+      prongCountOptions,
+      prongTip,
+      prongPave,
+      prongMetalIdx,
+      prongMetal,
+    ],
   );
 
   const key = (panelId: string, groupIdx: number) => `${panelId}-${groupIdx}`;
@@ -194,6 +257,13 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   function choose(panelId: string, groupIdx: number, choiceIdx: number) {
     if (panelId === "metal" && groupIdx === 0) setMetalIdx(choiceIdx);
     else if (panelId === "diamonds" && groupIdx === 0) setStoneIdx(choiceIdx);
+    else if (panelId === "head" && groupIdx === 0)
+      setProngCount(prongCountOptions[choiceIdx]);
+    else if (panelId === "head" && groupIdx === 1)
+      setProngTip(PRONG_TIPS[choiceIdx].id);
+    else if (panelId === "head" && groupIdx === 2) setProngPave(choiceIdx === 1);
+    else if (panelId === "head" && groupIdx === 3)
+      setProngMetalIdx(choiceIdx === 0 ? null : choiceIdx - 1);
     else setSelections((s) => ({ ...s, [key(panelId, groupIdx)]: choiceIdx }));
   }
 
@@ -223,6 +293,10 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               metalColor={metal.material.color}
               ringSize={ringSize}
               bandWidthMm={bandWidth}
+              prongAngles={angles}
+              prongTipModel={prongTipModel(prongTip)}
+              prongMetalColor={prongMetal.material.color}
+              prongPave={prongPave}
             />
           </div>
 
