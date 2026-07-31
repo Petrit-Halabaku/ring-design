@@ -77,6 +77,66 @@ export function prongWidthAtCarat(carat: number): number {
 }
 
 /**
+ * The same stepping as `prongWidthAtCarat` but without its 1.3 cap. The configurator uses
+ * this one — and only this one — when sizing a basket or bezel.
+ */
+function uncappedProngWidth(carat: number): number {
+  return Math.min(Math.floor(10 * (0.8 + carat / 10)) / 10, 10) / 0.8;
+}
+
+export type HeadOffsets = {
+  /** Pushes each prong's seat outward, added to its `aSide`. */
+  radial: number;
+  /** Reduces the pavilion depth the arm has to clear. */
+  pavilion: number;
+  /** Gap between the band's mounting face and the culet. */
+  clearance: number;
+};
+
+/**
+ * How a basket or bezel shifts the prong solve.
+ *
+ * A cage is not just extra metal around the stone — it changes where the prong can meet it.
+ * The stone sits down inside the cage, so the arm clears less pavilion (`pavilion`) and its
+ * seat moves outward to clear the cage wall (`radial`). A classic basket over a cathedral
+ * band also lifts the whole head.
+ *
+ * Both offsets go straight into `solveProngArm`: the configurator passes `aSide + radial`
+ * and uses `pavHeight - pavilion` everywhere inside the solve, so no separate plumbing is
+ * needed here.
+ */
+export function headOffsets(
+  style: string | null,
+  carat: number,
+  girdleThickness: number,
+  cathedral: boolean,
+): HeadOffsets {
+  const prongWidth = prongWidthAtCarat(carat);
+  const sized = uncappedProngWidth(carat);
+  const seat = prongWidth / REF_DIAMETER;
+  const grip = 0.715 * prongWidth;
+
+  if (style === "Classic") {
+    const wall = (0.8 - 0.005) * sized;
+    return {
+      radial: seat + (wall - grip) / 2,
+      pavilion: 1.1834 * sized - girdleThickness,
+      clearance: PRONG_CLEARANCE + (cathedral ? 0.4 : 0),
+    };
+  }
+
+  if (style === "Bezel") {
+    return {
+      radial: seat + ((prongWidth / 2) * 0.9 - 1.1 * prongWidth * 0.9 + 0.04),
+      pavilion: 1.3 * prongWidth * 0.9 - 0.2 - girdleThickness - 0.1,
+      clearance: PRONG_CLEARANCE,
+    };
+  }
+
+  return { radial: 0, pavilion: 0, clearance: PRONG_CLEARANCE };
+}
+
+/**
  * Radial distance from the ring axis out to each prong's seat, in mm — the "a" side of the
  * triangle the arm solve works on.
  *

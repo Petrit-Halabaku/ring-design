@@ -19,6 +19,11 @@ import {
   type ProngCount,
   type ProngTipId,
 } from "@/lib/settings/prongs";
+import {
+  BASKET_HALOS,
+  DEFAULT_BASKET_HALO,
+  type BasketHaloId,
+} from "@/lib/settings/basketHalo";
 import type { RingSettings } from "@/lib/settings/types";
 
 /**
@@ -108,6 +113,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   const [prongCount, setProngCount] = useState<ProngCount>(DEFAULT_PRONG_COUNT);
   const [prongTip, setProngTip] = useState<ProngTipId>(DEFAULT_PRONG_TIP);
   const [prongPave, setProngPave] = useState(false);
+  const [basketHalo, setBasketHalo] =
+    useState<BasketHaloId>(DEFAULT_BASKET_HALO);
   // null = prongs follow the band. The configurator calls a split "Mixed".
   const [prongMetalIdx, setProngMetalIdx] = useState<number | null>(null);
 
@@ -198,6 +205,17 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
         icon: HEAD_ICON,
         groups: [
           {
+            label: "Basket & Halo",
+            hint:
+              BASKET_HALOS.find((b) => b.id === basketHalo)?.hint ??
+              "No basket/halo",
+            selected: Math.max(
+              0,
+              BASKET_HALOS.findIndex((b) => b.id === basketHalo),
+            ),
+            choices: BASKET_HALOS.map((b) => ({ label: b.label })),
+          },
+          {
             label: "Prong Count",
             hint: `${angles.length} prong ${activeProngCount} setting`,
             selected: Math.max(0, prongCountOptions.indexOf(activeProngCount)),
@@ -249,6 +267,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
       prongPave,
       prongMetalIdx,
       prongMetal,
+      basketHalo,
     ],
   );
 
@@ -258,11 +277,13 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
     if (panelId === "metal" && groupIdx === 0) setMetalIdx(choiceIdx);
     else if (panelId === "diamonds" && groupIdx === 0) setStoneIdx(choiceIdx);
     else if (panelId === "head" && groupIdx === 0)
-      setProngCount(prongCountOptions[choiceIdx]);
+      setBasketHalo(BASKET_HALOS[choiceIdx].id);
     else if (panelId === "head" && groupIdx === 1)
+      setProngCount(prongCountOptions[choiceIdx]);
+    else if (panelId === "head" && groupIdx === 2)
       setProngTip(PRONG_TIPS[choiceIdx].id);
-    else if (panelId === "head" && groupIdx === 2) setProngPave(choiceIdx === 1);
-    else if (panelId === "head" && groupIdx === 3)
+    else if (panelId === "head" && groupIdx === 3) setProngPave(choiceIdx === 1);
+    else if (panelId === "head" && groupIdx === 4)
       setProngMetalIdx(choiceIdx === 0 ? null : choiceIdx - 1);
     else setSelections((s) => ({ ...s, [key(panelId, groupIdx)]: choiceIdx }));
   }
@@ -298,6 +319,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               prongTipModel={prongTipModel(prongTip)}
               prongMetalColor={prongMetal.material.color}
               prongPave={prongPave}
+              basketHalo={basketHalo}
+              cathedral={(selections["band-1"] ?? 0) === 1}
             />
           </div>
 

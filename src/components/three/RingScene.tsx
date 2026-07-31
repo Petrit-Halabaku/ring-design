@@ -15,17 +15,38 @@ import {
   middleModel,
   PRONG_BOTTOM,
   readAnchors,
+  wedgeTipModel,
 } from "./prongParts";
+import {
+  basketBlockModel,
+  basketPlainModel,
+  haloEdgeModel,
+  isSetStone,
+} from "./basketHaloParts";
+import {
+  basketHeight,
+  basketMeasurements,
+  haloHeight,
+  outlineRadius,
+  rimSegments,
+} from "@/lib/settings/basketGeometry";
+import {
+  basketHaloStyle,
+  isCagedStyle,
+  rimShowsStones,
+  usesBasketRim,
+} from "@/lib/settings/basketHalo";
 import { stoneDimensionsAtCarat } from "@/lib/settings/geometry";
 import {
+  headOffsets,
   MIDDLE_SPANS,
   MIDDLE_SPANS_PAVE,
-  PRONG_CLEARANCE,
   PRONG_SEAT,
   prongASides,
   prongWidthAtCarat,
   solveProngArm,
   splitProngArm,
+  wedgeTipAngle,
 } from "@/lib/settings/prongGeometry";
 import type { Stone } from "@/lib/settings/types";
 
@@ -132,6 +153,10 @@ export type SceneProps = {
   /** Prongs can take a different metal from the band (the configurator's "Mixed"). */
   prongMetalColor?: string;
   prongPave?: boolean;
+  /** Basket & halo style id, from lib/settings/basketHalo. */
+  basketHalo?: string;
+  /** A cathedral band lifts a classic basket; see prongGeometry.headOffsets. */
+  cathedral?: boolean;
 };
 
 function useMetalMaterial(color: string) {
@@ -398,6 +423,7 @@ function Prong({
   tipModel,
   metal,
   pave,
+  wedge,
 }: {
   solve: ProngSolve;
   prongWidth: number;
@@ -405,10 +431,16 @@ function Prong({
   tipModel: string;
   metal: THREE.Material;
   pave: boolean;
+  /** Finish in a wedge rather than a claw — see HeadLayout.caged. */
+  wedge: boolean;
 }) {
   const bottomParts = useBakedParts(PRONG_BOTTOM);
   const middleParts = useBakedParts(middleModel(solve.segments, pave));
-  const tipParts = useBakedParts(tipModel);
+  // A basket or bezel already grips the girdle, so the prong ends in a flat wedge cut to its
+  // own lean instead of a claw curling over a stone it no longer has to hold.
+  const tipParts = useBakedParts(
+    wedge ? wedgeTipModel(wedgeTipAngle(solve.tilt), pave) : tipModel,
+  );
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
 
   const bottom = useStretchedBottom(bottomParts, solve.bottomLength);
@@ -477,6 +509,12 @@ type HeadLayout = {
   mountY: number;
   /** Height of the stone's culet. Same calculation — the stone rides on the tallest arm. */
   stoneY: number;
+  /** A basket or bezel holds the girdle, so the prongs take wedge tips instead of claws. */
+  caged: boolean;
+  /** The basket/halo style name the configurator branches on, or null. */
+  style: string | null;
+  /** Gap between the band's mounting face and the culet — the basket hangs off this. */
+  clearance: number;
   prongs: ProngSolve[];
 };
 
@@ -499,10 +537,22 @@ function useHeadLayout(
   countType: string,
   bandWidthMm: number,
   pave: boolean,
+  basketHalo: string,
+  cathedral: boolean,
 ): HeadLayout {
   return useMemo(() => {
     const dims = stoneDimensionsAtCarat(stone, carat);
     const prongWidth = prongWidthAtCarat(carat);
+    const style = basketHaloStyle(basketHalo);
+
+    // A basket or bezel seats the stone inside a cage, which moves both where the prong
+    // meets it and how much pavilion the arm has to clear.
+    const offsets = headOffsets(
+      style,
+      carat,
+      dims.girdleThickness,
+      cathedral,
+    );
 
     // The vendor measures from the ring centre: inner radius + band thickness − seat. This
     // shank is a torus centred at −meanRadius, so that same face is just the tube radius.
@@ -520,10 +570,10 @@ function useHeadLayout(
 
     const arms = angles.map((azimuth, i) => {
       const arm = solveProngArm(
-        aSides[i],
-        PRONG_CLEARANCE,
+        aSides[i] + offsets.radial,
+        offsets.clearance,
         prongWidth,
-        dims.pavHeight,
+        dims.pavHeight - offsets.pavilion,
       );
       const parts = splitProngArm(
         arm.armLength,
@@ -539,10 +589,22 @@ function useHeadLayout(
     return {
       prongWidth,
       mountY,
-      stoneY: mountY + PRONG_CLEARANCE + tallest,
+      stoneY: mountY + offsets.clearance + tallest,
+      caged: isCagedStyle(style),
+      style,
+      clearance: offsets.clearance,
       prongs: arms.map((a) => ({ azimuth: a.azimuth, ...a.parts })),
     };
-  }, [stone, carat, angles, countType, bandWidthMm, pave]);
+  }, [
+    stone,
+    carat,
+    angles,
+    countType,
+    bandWidthMm,
+    pave,
+    basketHalo,
+    cathedral,
+  ]);
 }
 
 function Prongs({
@@ -569,9 +631,327 @@ function Prongs({
           tipModel={tipModel}
           metal={metal}
           pave={pave}
+          wedge={layout.caged}
         />
       ))}
     </>
+  );
+}
+
+/** Extent of a baked part along one axis, in millimetres. */
+function partSpan(parts: ReturnType<typeof useGlbMeshes>, axis: "x" | "z") {
+  let span = 0;
+  drawable(parts).forEach((m) => {
+    const box = m.geometry.boundingBox;
+    if (box) span = Math.max(span, box.max[axis] - box.min[axis]);
+  });
+  return span;
+}
+
+/**
+ * Instances one part around a rim.
+ *
+ * The parts are authored with +x pointing radially outward and z running tangentially, so
+ * each copy is a plain Y rotation plus a radial offset — the same placement the configurator
+ * uses (`position.set(point)`, `rotation.set(0, θ, 0)`, uniform scale).
+ *
+ * The +π/2 is load-bearing. A prong at azimuth θ points along (−sin θ, 0, −cos θ), while a
+ * part's +x under `rotation.y = φ` points along (cos φ, 0, −sin φ). Those agree only at
+ * φ = θ + π/2, so without it the rim lands a quarter turn off its own prongs.
+ */
+function RimRing({
+  model,
+  segments,
+  radiusAt,
+  y,
+  scale,
+  metal,
+  envMap,
+  setStones,
+}: {
+  model: string;
+  segments: { azimuth: number }[];
+  radiusAt: (azimuth: number) => number;
+  y: number;
+  scale: number;
+  metal: THREE.Material;
+  envMap: THREE.Texture;
+  /** Whether the melee set into each part are kept. */
+  setStones: boolean;
+}) {
+  const parts = useBakedParts(model);
+  const meshes = useMemo(() => drawable(parts), [parts]);
+
+  return (
+    <>
+      {segments.map((segment, i) => (
+        <group key={i} rotation={[0, segment.azimuth + Math.PI / 2, 0]}>
+          <group position={[radiusAt(segment.azimuth), y, 0]} scale={scale}>
+            {meshes.map((m, j) => {
+              if (isSetStone(m.name)) {
+                if (!setStones) return null;
+                return (
+                  <mesh key={`stone-${j}`} geometry={m.geometry}>
+                    <MeshRefractionMaterial
+                      envMap={envMap}
+                      {...DIAMOND_MATERIAL}
+                      toneMapped={false}
+                    />
+                  </mesh>
+                );
+              }
+              return (
+                <mesh key={`metal-${j}`} geometry={m.geometry} material={metal} />
+              );
+            })}
+          </group>
+        </group>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The basket — a rim of segments under the stone, one `Block` at each prong and `Plain`
+ * pieces filling the arcs between. A bezel uses the same rim with the thicker 0.23 blocks
+ * and no melee: the configurator's own bezel tip model is a placeholder cube, so the rim is
+ * what stands in for it.
+ */
+function Basket({
+  stone,
+  carat,
+  azimuths,
+  prongWidth,
+  stoneY,
+  clearance,
+  color,
+  showStones,
+  hidden,
+}: {
+  stone: Stone;
+  carat: number;
+  azimuths: number[];
+  prongWidth: number;
+  stoneY: number;
+  clearance: number;
+  color: string;
+  /** Hidden halo and pavé basket keep the melee set into the blocks; a plain basket doesn't. */
+  showStones: boolean;
+  /** A hidden halo pulls the rim in to its inner edge. */
+  hidden: boolean;
+}) {
+  const metal = useMetalMaterial(color);
+  const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
+  const dims = stoneDimensionsAtCarat(stone, carat);
+
+  // Only the curved outlines cap their runs with plain pieces.
+  const capped = ["Round", "Oval", "Pear", "Marquise", "Cushion"].includes(
+    stone.name,
+  );
+
+  const rim = useMemo(() => {
+    const m = basketMeasurements(
+      stone.name,
+      dims.width,
+      dims.length,
+      prongWidth,
+      hidden,
+    );
+    const mean = (m.topOuterWidth + m.topOuterLength) / 2;
+    return {
+      measurements: m,
+      segments: rimSegments(azimuths, mean, prongWidth, capped),
+    };
+  }, [
+    stone.name,
+    dims.width,
+    dims.length,
+    prongWidth,
+    hidden,
+    azimuths,
+    capped,
+  ]);
+
+  const y = basketHeight(stone.name, stoneY, dims.pavHeight, clearance);
+  const radiusAt = (azimuth: number) =>
+    outlineRadius(
+      azimuth,
+      rim.measurements.topOuterLength,
+      rim.measurements.topOuterWidth,
+    );
+
+  // One ring per distinct part: two block thicknesses and two handed plain caps.
+  const runs = [
+    {
+      model: basketBlockModel(stone.name, 0.15),
+      segments: rim.segments.filter(
+        (s) => s.kind === "block" && s.thickness === 0.15,
+      ),
+      stones: showStones,
+    },
+    {
+      model: basketBlockModel(stone.name, 0.23),
+      segments: rim.segments.filter(
+        (s) => s.kind === "block" && s.thickness === 0.23,
+      ),
+      stones: showStones,
+    },
+    {
+      model: basketPlainModel(stone.name, "Right"),
+      segments: rim.segments.filter(
+        (s) => s.kind === "plain" && s.side === "Right",
+      ),
+      stones: false,
+    },
+    {
+      model: basketPlainModel(stone.name, "Left"),
+      segments: rim.segments.filter(
+        (s) => s.kind === "plain" && s.side === "Left",
+      ),
+      stones: false,
+    },
+  ].filter((r) => r.segments.length > 0);
+
+  return (
+    <>
+      {runs.map((run) => (
+        <RimRing
+          key={run.model}
+          model={run.model}
+          segments={run.segments}
+          radiusAt={radiusAt}
+          y={y}
+          scale={prongWidth}
+          metal={metal}
+          envMap={envMap}
+          setStones={run.stones}
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * A bezel — a continuous metal wall wrapping the girdle.
+ *
+ * This one is procedural on purpose, not for lack of a model: selecting Bezel on the source
+ * pulls no cage geometry at all over the network (only `Middle2` + `WedgeTip50` for the
+ * prongs), so the wall is generated there too. A lathed rectangular section revolved about
+ * the ring axis gives the same closed collar, squashed to the stone's outline.
+ */
+function Bezel({
+  stone,
+  carat,
+  prongWidth,
+  stoneY,
+  color,
+}: {
+  stone: Stone;
+  carat: number;
+  prongWidth: number;
+  stoneY: number;
+  color: string;
+}) {
+  const metal = useMetalMaterial(color);
+  const dims = stoneDimensionsAtCarat(stone, carat);
+
+  const { geometry, squash } = useMemo(() => {
+    const girdleY = dims.pavHeight;
+    const wall = 0.26 * prongWidth;
+    const inner = dims.width / 2 - 0.03;
+    const outer = inner + wall;
+    // A collar, not a cup: it clears the girdle by a thin lip and stops well short of the
+    // table so the whole crown stays proud, the way the source's bezel reads from above.
+    const top = girdleY + dims.girdleThickness + 0.1 * prongWidth;
+    const bottom = girdleY - 0.5 * prongWidth;
+
+    const profile = [
+      new THREE.Vector2(inner, bottom),
+      new THREE.Vector2(outer, bottom),
+      new THREE.Vector2(outer, top),
+      new THREE.Vector2(inner, top),
+      new THREE.Vector2(inner, bottom),
+    ];
+    const g = new THREE.LatheGeometry(profile, 128);
+    g.computeVertexNormals();
+    return {
+      geometry: g,
+      // An oval or marquise stretches the collar along its length axis.
+      squash: dims.length / dims.width,
+    };
+  }, [dims.width, dims.length, dims.pavHeight, dims.girdleThickness, prongWidth]);
+
+  useLayoutEffect(() => () => geometry.dispose(), [geometry]);
+
+  return (
+    <group position={[0, stoneY, 0]} scale={[1, 1, squash]}>
+      <mesh geometry={geometry} material={metal} />
+    </group>
+  );
+}
+
+/**
+ * A halo — a ring of `Edge` pieces around the girdle, each carrying its own melee. A hidden
+ * halo is the same ring tucked underneath, so it reads only in profile.
+ */
+function Halo({
+  stone,
+  carat,
+  prongWidth,
+  stoneY,
+  color,
+  hidden,
+}: {
+  stone: Stone;
+  carat: number;
+  prongWidth: number;
+  stoneY: number;
+  color: string;
+  hidden: boolean;
+}) {
+  const metal = useMetalMaterial(color);
+  const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
+  const dims = stoneDimensionsAtCarat(stone, carat);
+
+  const model = haloEdgeModel(stone.name);
+  const parts = useBakedParts(model);
+
+  const layout = useMemo(() => {
+    const radial = partSpan(parts, "x") * prongWidth;
+    const tangential = partSpan(parts, "z") * prongWidth;
+    // Sit the ring just outside the girdle so the melee collar the stone.
+    const atZero = dims.length / 2 + radial / 2;
+    const atQuarter = dims.width / 2 + radial / 2;
+    const mean = (atZero + atQuarter) / 2;
+    const count = Math.max(8, Math.round((Math.PI * 2 * mean) / tangential));
+    return {
+      atZero,
+      atQuarter,
+      segments: Array.from({ length: count }, (_, i) => ({
+        azimuth: (i * Math.PI * 2) / count,
+      })),
+    };
+  }, [parts, prongWidth, dims.length, dims.width]);
+
+  const y = hidden
+    ? haloHeight(stoneY, dims.pavHeight, dims.girdleThickness) -
+      dims.girdleThickness -
+      partSpan(parts, "x") * prongWidth
+    : haloHeight(stoneY, dims.pavHeight, dims.girdleThickness);
+
+  return (
+    <RimRing
+      model={model}
+      segments={layout.segments}
+      radiusAt={(azimuth) =>
+        outlineRadius(azimuth, layout.atZero, layout.atQuarter)
+      }
+      y={y}
+      scale={prongWidth}
+      metal={metal}
+      envMap={envMap}
+      setStones
+    />
   );
 }
 
@@ -607,6 +987,8 @@ export default function RingScene({
   prongTipModel = "/models/ClawTip.glb",
   prongMetalColor,
   prongPave = false,
+  basketHalo = "None",
+  cathedral = false,
 }: SceneProps) {
   const head = useHeadLayout(
     stone,
@@ -615,6 +997,8 @@ export default function RingScene({
     prongCountType,
     bandWidthMm,
     prongPave,
+    basketHalo,
+    cathedral,
   );
 
   // The ring stands ~20mm tall with the stone on top; this framing keeps both in view.
@@ -645,6 +1029,46 @@ export default function RingScene({
             tipModel={prongTipModel}
             pave={prongPave}
           />
+
+          {/*
+            Routing verified against the source's network traffic: Basket and Hidden Halo
+            load the identical three basket-rim GLBs and differ only in whether the melee
+            stay; Halo loads its own arm and edge blocks; Bezel loads no cage geometry.
+          */}
+          {usesBasketRim(head.style) && (
+            <Basket
+              stone={stone}
+              carat={carat}
+              azimuths={prongAngles}
+              prongWidth={head.prongWidth}
+              stoneY={head.stoneY}
+              clearance={head.clearance}
+              color={prongMetalColor ?? metalColor}
+              showStones={rimShowsStones(head.style)}
+              hidden={head.style === "Hidden"}
+            />
+          )}
+
+          {head.style === "Classic" && (
+            <Halo
+              stone={stone}
+              carat={carat}
+              prongWidth={head.prongWidth}
+              stoneY={head.stoneY}
+              color={prongMetalColor ?? metalColor}
+              hidden={false}
+            />
+          )}
+
+          {head.style === "Bezel" && (
+            <Bezel
+              stone={stone}
+              carat={carat}
+              prongWidth={head.prongWidth}
+              stoneY={head.stoneY}
+              color={prongMetalColor ?? metalColor}
+            />
+          )}
         </group>
       </Suspense>
 
