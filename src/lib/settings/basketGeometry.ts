@@ -133,17 +133,135 @@ export function haloHeight(
 }
 
 /**
- * Radius of the stone's outline at an azimuth, with `atZero` along θ=0 — matching the
- * convention `prongASides` uses, so a basket stays concentric with the prong seats.
+ * How square a shape's outline is, as a superellipse exponent: 2 is a true ellipse, higher
+ * is squarer with tighter corners, lower is pointier.
+ *
+ * A rim has to follow the stone it sits under. Running an ellipse around an Asscher leaves
+ * the rail cutting the corners and bulging at the flats, which is exactly what it looks
+ * like — so the squared shapes get a squared outline.
+ */
+export function outlineExponent(shape: string): number {
+  switch (shape) {
+    case "Round":
+    case "Oval":
+      return 2;
+    case "Cushion":
+      return 3;
+    case "Princess":
+    case "Asscher":
+    case "Emerald":
+    case "Radiant":
+      return 4;
+    case "Marquise":
+    case "Pear":
+      return 1.6;
+    default:
+      return 2;
+  }
+}
+
+/**
+ * Radius of the outline at an azimuth, with `atZero` along θ=0 — the convention
+ * `prongASides` uses, so a rim stays concentric with the prong seats.
  */
 export function outlineRadius(
   theta: number,
   atZero: number,
   atQuarter: number,
+  exponent = 2,
 ): number {
-  const c = atQuarter * Math.cos(theta);
-  const s = atZero * Math.sin(theta);
-  return (atZero * atQuarter) / Math.sqrt(c * c + s * s);
+  const c = Math.abs(Math.cos(theta)) ** exponent / atZero ** exponent;
+  const s = Math.abs(Math.sin(theta)) ** exponent / atQuarter ** exponent;
+  return (c + s) ** (-1 / exponent);
+}
+
+/** A piece's placement on the rim: where it sits and which way it faces. */
+export type RimFrame = { x: number; z: number; rotY: number };
+
+/**
+ * Position and facing for a piece at an azimuth.
+ *
+ * A prong at azimuth θ points along (−sin θ, 0, −cos θ), so that's the direction the rim
+ * runs out in. Facing is taken from the outline's own *normal*, found by differencing
+ * neighbouring points — on anything but a circle the normal is not the radial direction, and
+ * using the radius instead is what makes pieces sit skew on a squared stone.
+ */
+export function rimFrame(
+  azimuth: number,
+  atZero: number,
+  atQuarter: number,
+  exponent = 2,
+): RimFrame {
+  const point = (t: number) => {
+    const r = outlineRadius(t, atZero, atQuarter, exponent);
+    return { x: -Math.sin(t) * r, z: -Math.cos(t) * r };
+  };
+
+  const eps = 1e-3;
+  const before = point(azimuth - eps);
+  const after = point(azimuth + eps);
+  const here = point(azimuth);
+
+  // Normal = tangent turned a quarter, flipped to point away from the axis.
+  let nx = after.z - before.z;
+  let nz = -(after.x - before.x);
+  if (nx * here.x + nz * here.z < 0) {
+    nx = -nx;
+    nz = -nz;
+  }
+  const length = Math.hypot(nx, nz) || 1;
+
+  return {
+    x: here.x,
+    z: here.z,
+    rotY: Math.atan2(-nz / length, nx / length),
+  };
+}
+
+/** Cumulative arc length of the outline, sampled densely enough to walk by distance. */
+function outlineSamples(
+  atZero: number,
+  atQuarter: number,
+  exponent: number,
+  count = 1440,
+) {
+  const angles: number[] = [];
+  const arc: number[] = [];
+  let total = 0;
+  let prev = { x: 0, z: 0 };
+
+  for (let i = 0; i <= count; i++) {
+    const t = (i / count) * Math.PI * 2;
+    const r = outlineRadius(t, atZero, atQuarter, exponent);
+    const p = { x: -Math.sin(t) * r, z: -Math.cos(t) * r };
+    if (i > 0) total += Math.hypot(p.x - prev.x, p.z - prev.z);
+    angles.push(t);
+    arc.push(total);
+    prev = p;
+  }
+  return { angles, arc, total };
+}
+
+/** Azimuth at a given distance along the outline. */
+function azimuthAtArc(
+  samples: ReturnType<typeof outlineSamples>,
+  distance: number,
+): number {
+  const { angles, arc, total } = samples;
+  let d = distance % total;
+  if (d < 0) d += total;
+
+  let lo = 0;
+  let hi = arc.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arc[mid] < d) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo === 0) return angles[0];
+  const span = arc[lo] - arc[lo - 1] || 1;
+  const f = (d - arc[lo - 1]) / span;
+  return angles[lo - 1] + f * (angles[lo] - angles[lo - 1]);
 }
 
 /**
@@ -157,12 +275,41 @@ export const RIM_PITCH = { block015: 0.9559, block023: 1.108, plain: 0.4871 };
 /** Below this spacing the configurator switches to the thinner 0.15 block. */
 export const RIM_THIN_THRESHOLD = 0.925;
 
-export type RimSegment = {
-  azimuth: number;
+/** Total length once round an outline. */
+export function outlinePerimeter(
+  atZero: number,
+  atQuarter: number,
+  exponent = 2,
+): number {
+  return outlineSamples(atZero, atQuarter, exponent).total;
+}
+
+/**
+ * `count` frames spaced evenly by arc length all the way round an outline — for a halo,
+ * whose pieces ring the whole stone rather than sitting between prongs.
+ */
+export function ringFrames(
+  count: number,
+  atZero: number,
+  atQuarter: number,
+  exponent = 2,
+): RimFrame[] {
+  const samples = outlineSamples(atZero, atQuarter, exponent);
+  return Array.from({ length: count }, (_, i) =>
+    rimFrame(
+      azimuthAtArc(samples, (samples.total * i) / count),
+      atZero,
+      atQuarter,
+      exponent,
+    ),
+  );
+}
+
+export type RimPiece = RimFrame & {
   kind: "block" | "plain";
   /** Blocks come in two rim thicknesses; the spacing picks one. */
   thickness: 0.15 | 0.23;
-  /** Plain pieces are handed — each span is capped Right at its start, Left at its end. */
+  /** Plain pieces are handed — mirror halves of each run. */
   side: "Left" | "Right";
 };
 
@@ -174,53 +321,67 @@ export type RimSegment = {
  * pieces. This works the same way but solves the spacing in angle, which is equivalent for
  * the near-circular rims a basket actually has and avoids carrying its polyline machinery.
  */
-export function rimSegments(
+export function rimLayout(
   azimuths: number[],
-  radius: number,
+  atZero: number,
+  atQuarter: number,
+  exponent: number,
   scale = 1,
-  capped = true,
-): RimSegment[] {
-  if (azimuths.length === 0 || radius <= 0) return [];
+  /** A plain basket is all `Plain` pieces — they carry no stone seats, so the rail is smooth. */
+  smooth = true,
+): RimPiece[] {
+  if (azimuths.length === 0 || atZero <= 0 || atQuarter <= 0) return [];
 
-  const sorted = [...azimuths].sort((a, b) => a - b);
-  const blockPitch = (t: 0.15 | 0.23) =>
-    (t === 0.15 ? RIM_PITCH.block015 : RIM_PITCH.block023) * scale;
+  const samples = outlineSamples(atZero, atQuarter, exponent);
+  const { angles, arc, total } = samples;
+
+  /** Distance along the outline at an azimuth. */
+  const arcAt = (theta: number) => {
+    let t = theta % (Math.PI * 2);
+    if (t < 0) t += Math.PI * 2;
+    let lo = 0;
+    let hi = angles.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (angles[mid] < t) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === 0) return arc[0];
+    const span = angles[lo] - angles[lo - 1] || 1;
+    const f = (t - angles[lo - 1]) / span;
+    return arc[lo - 1] + f * (arc[lo] - arc[lo - 1]);
+  };
+
   const plainPitch = RIM_PITCH.plain * scale;
-
-  const out: RimSegment[] = [];
+  const sorted = [...azimuths].sort((a, b) => a - b);
+  const out: RimPiece[] = [];
 
   for (let i = 0; i < sorted.length; i++) {
-    const from = sorted[i];
-    const to = i === sorted.length - 1 ? sorted[0] + Math.PI * 2 : sorted[i + 1];
+    const startArc = arcAt(sorted[i]);
+    const rawEnd = i === sorted.length - 1 ? arcAt(sorted[0]) + total : arcAt(sorted[i + 1]);
+    const span = rawEnd - startArc;
+    if (span <= 0) continue;
 
-    // Work in arc length, the way the configurator walks its outline rather than in angle.
-    const span = (to - from) * radius;
-
-    // Spacing decides which of the two block thicknesses the run uses.
-    const rough = Math.max(1, Math.round(span / blockPitch(0.23)));
+    // Blocks come in two thicknesses; the spacing picks one. A smooth rail uses neither.
+    const rough = Math.max(1, Math.round(span / (RIM_PITCH.block023 * scale)));
     const thickness: 0.15 | 0.23 =
       span / rough < RIM_THIN_THRESHOLD * scale ? 0.15 : 0.23;
 
-    // Two plain pieces cap the run; blocks fill what's left between them.
-    const caps = capped ? 2 * plainPitch : 0;
-    const blocks = Math.max(
-      1,
-      Math.round((span - caps) / blockPitch(thickness)),
-    );
+    const pitch = smooth
+      ? plainPitch
+      : (thickness === 0.15 ? RIM_PITCH.block015 : RIM_PITCH.block023) * scale;
+    const count = Math.max(1, Math.round(span / pitch));
 
-    // Distribute the whole span exactly across every piece so consecutive ones touch.
-    const pieces = blocks + (capped ? 2 : 0);
-    const step = (to - from) / pieces;
-
-    for (let n = 0; n < pieces; n++) {
-      const azimuth = from + step * (n + 0.5);
-      const isFirst = capped && n === 0;
-      const isLast = capped && n === pieces - 1;
+    for (let n = 0; n < count; n++) {
+      // Equal steps in *arc length*, then converted back to an angle — on a squared outline
+      // equal angles would bunch the pieces up at the corners.
+      const azimuth = azimuthAtArc(samples, startArc + (span * (n + 0.5)) / count);
       out.push({
-        azimuth,
-        kind: isFirst || isLast ? "plain" : "block",
+        ...rimFrame(azimuth, atZero, atQuarter, exponent),
+        kind: smooth ? "plain" : "block",
         thickness,
-        side: isFirst ? "Right" : "Left",
+        // Handed pieces are mirrored halves, so each run turns over at its midpoint.
+        side: n < count / 2 ? "Right" : "Left",
       });
     }
   }

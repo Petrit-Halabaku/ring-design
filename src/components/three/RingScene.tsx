@@ -27,8 +27,13 @@ import {
   basketHeight,
   basketMeasurements,
   haloHeight,
+  outlineExponent,
+  outlinePerimeter,
   outlineRadius,
-  rimSegments,
+  rimLayout,
+  ringFrames,
+  type BasketMeasurements,
+  type RimFrame,
 } from "@/lib/settings/basketGeometry";
 import {
   basketHaloStyle,
@@ -638,13 +643,25 @@ function Prongs({
   );
 }
 
-/** Extent of a baked part along one axis, in millimetres. */
-function partSpan(parts: ReturnType<typeof useGlbMeshes>, axis: "x" | "z") {
+/**
+ * Extent of a baked part along one axis, in millimetres. `only` narrows it to the melee set
+ * into the part, which is what a pavé run has to be spaced on: the metal segment is far wider
+ * than its stone, so pitching on the segment leaves a gap beside every stone, while pitching
+ * on the stone overlaps the metal into one continuous rail — which is how a real pavé line is
+ * cut, and what the source shows.
+ */
+function partSpan(
+  parts: ReturnType<typeof useGlbMeshes>,
+  axis: "x" | "z",
+  only: "all" | "stones" = "all",
+) {
   let span = 0;
-  drawable(parts).forEach((m) => {
-    const box = m.geometry.boundingBox;
-    if (box) span = Math.max(span, box.max[axis] - box.min[axis]);
-  });
+  drawable(parts)
+    .filter((m) => only === "all" || isSetStone(m.name))
+    .forEach((m) => {
+      const box = m.geometry.boundingBox;
+      if (box) span = Math.max(span, box.max[axis] - box.min[axis]);
+    });
   return span;
 }
 
@@ -661,8 +678,7 @@ function partSpan(parts: ReturnType<typeof useGlbMeshes>, axis: "x" | "z") {
  */
 function RimRing({
   model,
-  segments,
-  radiusAt,
+  pieces,
   y,
   scale,
   metal,
@@ -670,8 +686,8 @@ function RimRing({
   setStones,
 }: {
   model: string;
-  segments: { azimuth: number }[];
-  radiusAt: (azimuth: number) => number;
+  /** Pre-solved placements: position on the outline plus its facing. */
+  pieces: RimFrame[];
   y: number;
   scale: number;
   metal: THREE.Material;
@@ -684,9 +700,9 @@ function RimRing({
 
   return (
     <>
-      {segments.map((segment, i) => (
-        <group key={i} rotation={[0, segment.azimuth + Math.PI / 2, 0]}>
-          <group position={[radiusAt(segment.azimuth), y, 0]} scale={scale}>
+      {pieces.map((piece, i) => (
+        <group key={i} position={[piece.x, y, piece.z]}>
+          <group rotation={[0, piece.rotY, 0]} scale={scale}>
             {meshes.map((m, j) => {
               if (isSetStone(m.name)) {
                 if (!setStones) return null;
@@ -744,73 +760,74 @@ function Basket({
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
   const dims = stoneDimensionsAtCarat(stone, carat);
 
-  // Only the curved outlines cap their runs with plain pieces.
-  const capped = ["Round", "Oval", "Pear", "Marquise", "Cushion"].includes(
-    stone.name,
+  // A plain basket is built from `Plain` pieces only. They carry no stone seats, which is
+  // what makes the rail read as one smooth ribbon; the `Block` pieces have melee sockets cut
+  // into them, so using those for a plain basket leaves the rail pocked with empty seats.
+  const smooth = !showStones;
+  const exponent = outlineExponent(stone.name);
+
+  const measurements = useMemo(
+    () =>
+      basketMeasurements(
+        stone.name,
+        dims.width,
+        dims.length,
+        prongWidth,
+        hidden,
+      ),
+    [stone.name, dims.width, dims.length, prongWidth, hidden],
   );
 
-  const rim = useMemo(() => {
-    const m = basketMeasurements(
-      stone.name,
-      dims.width,
-      dims.length,
-      prongWidth,
-      hidden,
-    );
-    const mean = (m.topOuterWidth + m.topOuterLength) / 2;
-    return {
-      measurements: m,
-      segments: rimSegments(azimuths, mean, prongWidth, capped),
-    };
-  }, [
-    stone.name,
-    dims.width,
-    dims.length,
-    prongWidth,
-    hidden,
-    azimuths,
-    capped,
-  ]);
+  const rail = useBasketRail(measurements, exponent, measurements.height);
+
+  const pieces = useMemo(
+    () =>
+      rimLayout(
+        azimuths,
+        measurements.topOuterLength,
+        measurements.topOuterWidth,
+        exponent,
+        prongWidth,
+        false,
+      ),
+    [azimuths, measurements, exponent, prongWidth],
+  );
 
   const y = basketHeight(stone.name, stoneY, dims.pavHeight, clearance);
-  const radiusAt = (azimuth: number) =>
-    outlineRadius(
-      azimuth,
-      rim.measurements.topOuterLength,
-      rim.measurements.topOuterWidth,
-    );
 
-  // One ring per distinct part: two block thicknesses and two handed plain caps.
+  // A plain basket is the lofted rail on its own; the melee-bearing styles set their stones
+  // into the scalloped block pieces instead.
+  if (smooth) {
+    return (
+      <group position={[0, y, 0]}>
+        <mesh geometry={rail} material={metal} />
+      </group>
+    );
+  }
+
+  // One ring per distinct part — two block thicknesses, two handed plain pieces.
   const runs = [
     {
       model: basketBlockModel(stone.name, 0.15),
-      segments: rim.segments.filter(
-        (s) => s.kind === "block" && s.thickness === 0.15,
-      ),
+      pieces: pieces.filter((p) => p.kind === "block" && p.thickness === 0.15),
       stones: showStones,
     },
     {
       model: basketBlockModel(stone.name, 0.23),
-      segments: rim.segments.filter(
-        (s) => s.kind === "block" && s.thickness === 0.23,
-      ),
+      pieces: pieces.filter((p) => p.kind === "block" && p.thickness === 0.23),
       stones: showStones,
     },
     {
       model: basketPlainModel(stone.name, "Right"),
-      segments: rim.segments.filter(
-        (s) => s.kind === "plain" && s.side === "Right",
-      ),
+      pieces: pieces.filter((p) => p.kind === "plain" && p.side === "Right"),
       stones: false,
     },
     {
       model: basketPlainModel(stone.name, "Left"),
-      segments: rim.segments.filter(
-        (s) => s.kind === "plain" && s.side === "Left",
-      ),
+      pieces: pieces.filter((p) => p.kind === "plain" && p.side === "Left"),
       stones: false,
     },
-  ].filter((r) => r.segments.length > 0);
+  ].filter((r) => r.pieces.length > 0);
 
   return (
     <>
@@ -818,8 +835,7 @@ function Basket({
         <RimRing
           key={run.model}
           model={run.model}
-          segments={run.segments}
-          radiusAt={radiusAt}
+          pieces={run.pieces}
           y={y}
           scale={prongWidth}
           metal={metal}
@@ -829,6 +845,71 @@ function Basket({
       ))}
     </>
   );
+}
+
+/**
+ * The basket's rail — a smooth band lofted around the stone's outline.
+ *
+ * This is generated rather than assembled, which is what the configurator does too. Its
+ * `Block`/`Plain` GLBs are scalloped pavé bridges with stone seats cut into them; they load
+ * on every basket because those `useLoader` hooks are unconditional (the same way `WedgeTip`
+ * loads for a plain head without being drawn), but a *plain* basket draws none of them — the
+ * rail it shows is a continuous loft, which is why the real one has no seams or sockets.
+ *
+ * `basketMeasurements` already gives the four radii this needs: the band runs outer→inner
+ * across its top face and outer→inner across its bottom, and the outline exponent makes it
+ * follow a squared stone instead of bulging round it.
+ */
+function useBasketRail(
+  m: BasketMeasurements,
+  exponent: number,
+  height: number,
+) {
+  const geometry = useMemo(() => {
+    const SEGMENTS = 256;
+    const top = height / 2;
+    const bottom = -height / 2;
+
+    const position: number[] = [];
+    const index: number[] = [];
+
+    for (let i = 0; i <= SEGMENTS; i++) {
+      const t = (i / SEGMENTS) * Math.PI * 2;
+      const dx = -Math.sin(t);
+      const dz = -Math.cos(t);
+      const at = (long: number, wide: number) =>
+        outlineRadius(t, long, wide, exponent);
+
+      // Cross-section, walked as a closed loop: over the top face, down the inner wall,
+      // back along the bottom, up the outer wall.
+      const section: [number, number][] = [
+        [at(m.topOuterLength, m.topOuterWidth), top],
+        [at(m.topInnerLength, m.topInnerWidth), top],
+        [at(m.bottomInnerLength, m.bottomInnerWidth), bottom],
+        [at(m.bottomOuterLength, m.bottomOuterWidth), bottom],
+      ];
+      section.forEach(([r, y]) => position.push(dx * r, y, dz * r));
+    }
+
+    for (let i = 0; i < SEGMENTS; i++) {
+      const a = i * 4;
+      const b = (i + 1) * 4;
+      for (let k = 0; k < 4; k++) {
+        const next = (k + 1) % 4;
+        index.push(a + k, b + k, b + next, a + k, b + next, a + next);
+      }
+    }
+
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(position, 3));
+    g.setIndex(index);
+    g.computeVertexNormals();
+    g.computeBoundingBox();
+    return g;
+  }, [m, exponent, height]);
+
+  useLayoutEffect(() => () => geometry.dispose(), [geometry]);
+  return geometry;
 }
 
 /**
@@ -916,22 +997,21 @@ function Halo({
   const model = haloEdgeModel(stone.name);
   const parts = useBakedParts(model);
 
-  const layout = useMemo(() => {
+  const pieces = useMemo(() => {
     const radial = partSpan(parts, "x") * prongWidth;
-    const tangential = partSpan(parts, "z") * prongWidth;
+    // Pitch on the melee, not the metal segment, so the stones sit shoulder to shoulder.
+    // For a 1ct round this comes out at 0.9mm — the "Pave Size 0.9mm" the source reports.
+    const pitch = partSpan(parts, "z", "stones") * prongWidth;
     // Sit the ring just outside the girdle so the melee collar the stone.
     const atZero = dims.length / 2 + radial / 2;
     const atQuarter = dims.width / 2 + radial / 2;
-    const mean = (atZero + atQuarter) / 2;
-    const count = Math.max(8, Math.round((Math.PI * 2 * mean) / tangential));
-    return {
-      atZero,
-      atQuarter,
-      segments: Array.from({ length: count }, (_, i) => ({
-        azimuth: (i * Math.PI * 2) / count,
-      })),
-    };
-  }, [parts, prongWidth, dims.length, dims.width]);
+    const exponent = outlineExponent(stone.name);
+    const count = Math.max(
+      8,
+      Math.round(outlinePerimeter(atZero, atQuarter, exponent) / pitch),
+    );
+    return ringFrames(count, atZero, atQuarter, exponent);
+  }, [parts, prongWidth, dims.length, dims.width, stone.name]);
 
   const y = hidden
     ? haloHeight(stoneY, dims.pavHeight, dims.girdleThickness) -
@@ -942,10 +1022,7 @@ function Halo({
   return (
     <RimRing
       model={model}
-      segments={layout.segments}
-      radiusAt={(azimuth) =>
-        outlineRadius(azimuth, layout.atZero, layout.atQuarter)
-      }
+      pieces={pieces}
       y={y}
       scale={prongWidth}
       metal={metal}
