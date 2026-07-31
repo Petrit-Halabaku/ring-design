@@ -191,6 +191,12 @@ export function rimFrame(
   atZero: number,
   atQuarter: number,
   exponent = 2,
+  /**
+   * Which of the part's own axes points radially outward. Basket pieces are authored +x
+   * radial; halo pieces are +z, which is why the configurator places those with a plain
+   * `rotation.y = θ` and the basket's with a quarter-turn.
+   */
+  radialAxis: "x" | "z" = "x",
 ): RimFrame {
   const point = (t: number) => {
     const r = outlineRadius(t, atZero, atQuarter, exponent);
@@ -211,10 +217,12 @@ export function rimFrame(
   }
   const length = Math.hypot(nx, nz) || 1;
 
+  const facing = Math.atan2(-nz / length, nx / length);
+
   return {
     x: here.x,
     z: here.z,
-    rotY: Math.atan2(-nz / length, nx / length),
+    rotY: radialAxis === "z" ? facing - Math.PI / 2 : facing,
   };
 }
 
@@ -293,6 +301,7 @@ export function ringFrames(
   atZero: number,
   atQuarter: number,
   exponent = 2,
+  radialAxis: "x" | "z" = "x",
 ): RimFrame[] {
   const samples = outlineSamples(atZero, atQuarter, exponent);
   return Array.from({ length: count }, (_, i) =>
@@ -301,6 +310,7 @@ export function ringFrames(
       atZero,
       atQuarter,
       exponent,
+      radialAxis,
     ),
   );
 }

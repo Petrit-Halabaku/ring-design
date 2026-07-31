@@ -20,9 +20,17 @@ import {
 import {
   basketBlockModel,
   basketPlainModel,
+  haloArmModel,
   haloEdgeModel,
+  haloPartModel,
+  haloTipModel,
   isSetStone,
 } from "./basketHaloParts";
+import {
+  haloLayout,
+  type HaloPlacement,
+} from "@/lib/settings/haloLayout";
+import { rimThickness } from "@/lib/settings/haloLayout/types";
 import {
   basketHeight,
   basketMeasurements,
@@ -43,6 +51,7 @@ import {
 } from "@/lib/settings/basketHalo";
 import { stoneDimensionsAtCarat } from "@/lib/settings/geometry";
 import {
+  haloThicknessRatio,
   headOffsets,
   MIDDLE_SPANS,
   MIDDLE_SPANS_PAVE,
@@ -155,6 +164,8 @@ export type SceneProps = {
   prongCountType?: string;
   /** Local path to the selected prong tip's GLB. */
   prongTipModel?: string;
+  /** Tip id ("Claw", "Rounded", …) — a halo needs it to pick its own matching tip. */
+  prongTipId?: string;
   /** Prongs can take a different metal from the band (the configurator's "Mixed"). */
   prongMetalColor?: string;
   prongPave?: boolean;
@@ -164,14 +175,24 @@ export type SceneProps = {
   cathedral?: boolean;
 };
 
+/**
+ * The configurator's metal, matched exactly: `new MeshStandardMaterial({ color, metalness: 1,
+ * roughness: 0.05 })` lit by `env_metal_flat.hdr`, with `envMapIntensity` left at its default
+ * of 1.
+ *
+ * All three of those matter to the colour. This used to be a MeshPhysicalMaterial at
+ * roughness 0.15 with envMapIntensity 1.5 — the extra roughness spread the flat probe into a
+ * broad wash and the extra intensity lifted it past the colour, which is why the gold came
+ * out pale and chalky instead of the source's deeper, sharper yellow. The hexes were never
+ * wrong (#ffcb7d for both yellows, matching their records).
+ */
 function useMetalMaterial(color: string) {
   const env = useEnvironment({ files: METAL_HDR });
   const material = useMemo(() => {
-    const m = new THREE.MeshPhysicalMaterial({
+    const m = new THREE.MeshStandardMaterial({
       color: new THREE.Color(color),
       metalness: 1,
-      roughness: 0.15,
-      envMapIntensity: 1.5,
+      roughness: 0.05,
     });
     m.envMap = env;
     return m;
@@ -506,6 +527,11 @@ type ProngSolve = {
   segments: number;
   /** How far `Bottom` is stretched to make up the remainder, authored units. */
   bottomLength: number;
+  /**
+   * Top of the prong's middle segment in authored units. `Middle{n}` runs 0.55 → 0.55 + span
+   * and is offset by `bottomLength - 0.55`, so its top is simply `bottomLength + span`.
+   */
+  armTop: number;
 };
 
 type HeadLayout = {
@@ -520,6 +546,8 @@ type HeadLayout = {
   style: string | null;
   /** Gap between the band's mounting face and the culet — the basket hangs off this. */
   clearance: number;
+  /** Radial seat of each prong; the halo's curved arms land on these. */
+  aSides: number[];
   prongs: ProngSolve[];
 };
 
@@ -590,15 +618,42 @@ function useHeadLayout(
     });
 
     const tallest = arms.reduce((most, a) => Math.max(most, a.rise), 0);
+    const stoneY = mountY + offsets.clearance + tallest;
+
+    /** Span of `Middle{n}` between its own pointers, in authored units. */
+    const spanOf = (n: number) => (spans[n] ?? 0) - 0.0169;
+
+    /**
+     * A halo does not re-aim the prongs.
+     *
+     * It is tempting to think it must — the curved `HaloArm` starts from the ring, so surely
+     * the straight body below it has to be pointed at that start. It doesn't. The halo's whole
+     * effect on the prong is already carried by `headOffsets("Classic")`, which pushes the
+     * seat out by `prongWidth/6.6 + (0.795·ratio − 0.715·prongWidth)/2` and shortens the
+     * pavilion the arm must clear by `1.1834·ratio − girdle`. The solve above consumes both,
+     * so the lean it returns is the lean a halo wants — 60.2° at 1ct, which is why the head
+     * then picks `WedgeTip60`.
+     *
+     * Re-deriving the lean from the stone's outline instead throws that away, and with it the
+     * bend that makes the arms converge under the girdle.
+     */
+    const prongs = arms.map((a) => ({
+      azimuth: a.azimuth,
+      ...a.parts,
+      armTop: a.parts.bottomLength + spanOf(a.parts.segments),
+    }));
 
     return {
       prongWidth,
       mountY,
-      stoneY: mountY + offsets.clearance + tallest,
+      stoneY,
       caged: isCagedStyle(style),
+      // Raw, *before* `offsets.radial`. The halo's arms are placed off this table directly
+      // (`prongArmASide` in the source), while the prong bodies are solved off the offset one.
+      aSides,
       style,
       clearance: offsets.clearance,
-      prongs: arms.map((a) => ({ azimuth: a.azimuth, ...a.parts })),
+      prongs,
     };
   }, [
     stone,
@@ -650,6 +705,22 @@ function Prongs({
  * on the stone overlaps the metal into one continuous rail — which is how a real pavé line is
  * cut, and what the source shows.
  */
+/** Furthest extent of a baked part along one axis, signed — for clearances. */
+function partBound(
+  parts: ReturnType<typeof useGlbMeshes>,
+  axis: "x" | "z",
+  side: "min" | "max",
+) {
+  let bound = side === "max" ? -Infinity : Infinity;
+  drawable(parts).forEach((m) => {
+    const box = m.geometry.boundingBox;
+    if (!box) return;
+    bound =
+      side === "max" ? Math.max(bound, box.max[axis]) : Math.min(bound, box.min[axis]);
+  });
+  return Number.isFinite(bound) ? bound : 0;
+}
+
 function partSpan(
   parts: ReturnType<typeof useGlbMeshes>,
   axis: "x" | "z",
@@ -971,59 +1042,240 @@ function Bezel({
   );
 }
 
+/** Instances one halo part at each of its solved placements. */
+function HaloParts({
+  model,
+  placements,
+  scale,
+  metal,
+  envMap,
+}: {
+  model: string;
+  placements: HaloPlacement[];
+  scale: number;
+  metal: THREE.Material;
+  envMap: THREE.Texture;
+}) {
+  const parts = useBakedParts(model);
+  const meshes = useMemo(() => drawable(parts), [parts]);
+
+  return (
+    <>
+      {placements.map((placement, i) => (
+        <group key={i} position={placement.position}>
+          <group rotation={[0, placement.rotY, 0]} scale={scale}>
+            {meshes.map((m, j) =>
+              isSetStone(m.name) ? (
+                <mesh key={`stone-${j}`} geometry={m.geometry}>
+                  <MeshRefractionMaterial
+                    envMap={envMap}
+                    {...DIAMOND_MATERIAL}
+                    toneMapped={false}
+                  />
+                </mesh>
+              ) : (
+                <mesh key={`metal-${j}`} geometry={m.geometry} material={metal} />
+              ),
+            )}
+          </group>
+        </group>
+      ))}
+    </>
+  );
+}
+
 /**
- * A halo — a ring of `Edge` pieces around the girdle, each carrying its own melee. A hidden
- * halo is the same ring tucked underneath, so it reads only in profile.
+ * A halo — a rail of melee around the girdle, carried on curved arms that rise from the band.
+ *
+ * The rail's layout is per-outline and comes from `lib/settings/haloLayout`; see that module
+ * for why it cannot be one parametric ring. Shapes not yet ported there fall back to the old
+ * superellipse below, which places no corner piece and no bed.
  */
 function Halo({
   stone,
   carat,
   prongWidth,
+  ratio,
   stoneY,
   color,
   hidden,
+  azimuths,
+  aSides,
+  tipId,
 }: {
   stone: Stone;
   carat: number;
   prongWidth: number;
+  /** `haloThicknessRatio` — what every halo part scales by, prong width being capped. */
+  ratio: number;
   stoneY: number;
   color: string;
   hidden: boolean;
+  /** Prong azimuths, and the raw per-shape aSide table the arms are placed off. */
+  azimuths: number[];
+  aSides: number[];
+  tipId: string;
 }) {
   const metal = useMetalMaterial(color);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
   const dims = stoneDimensionsAtCarat(stone, carat);
 
+  const armParts = useBakedParts(haloArmModel(stone.name));
+  const haloTipParts = useBakedParts(haloTipModel(stone.name, tipId));
+
+  const layout = useMemo(
+    () =>
+      haloLayout(stone.name, {
+        width: dims.width,
+        length: dims.length,
+        ratio,
+      }),
+    [stone.name, dims.width, dims.length, ratio],
+  );
+
+  // The beds are generated, so this component owns them.
+  useLayoutEffect(
+    () => () => layout?.beds.forEach((bed) => bed.geometry.dispose()),
+    [layout],
+  );
+
+  /** One `HaloParts` per distinct GLB, so each calls `useBakedParts` exactly once. */
+  const partGroups = useMemo(() => {
+    if (!layout) return [];
+    const groups = new Map<string, HaloPlacement[]>();
+    for (const placement of layout.placements) {
+      const model = haloPartModel(stone.name, placement.part);
+      const group = groups.get(model);
+      if (group) group.push(placement);
+      else groups.set(model, [placement]);
+    }
+    return [...groups].map(([model, placements]) => ({ model, placements }));
+  }, [layout, stone.name]);
+
+  const y = hidden
+    ? haloHeight(stoneY, dims.pavHeight, dims.girdleThickness, ratio) -
+      dims.girdleThickness -
+      rimThickness(ratio)
+    : haloHeight(stoneY, dims.pavHeight, dims.girdleThickness, ratio);
+
+  /**
+   * The curved arms, placed as the configurator places them: out at `aSide + 0.795·ratio/2`
+   * along each prong's own bearing, `rotation.y = θ` with no quarter-turn, uniformly scaled by
+   * the thickness ratio — and inside the halo's group rather than on the prong stack, which is
+   * what makes them read as the prongs bending over to cradle the rail.
+   *
+   * `0.795·ratio` is the rim thickness, so the arm rides the rail's own centre line. The plain
+   * azimuth is the tell that halo parts are authored +z radial, unlike the basket's +x.
+   * `HaloArm` runs y −0.274→1.243 flaring to z 1.044, and every halo tip picks up at exactly
+   * 1.243, so arm and tip share one offset and need no locators.
+   */
+  const arms = useMemo(() => {
+    const reach = rimThickness(ratio);
+    return azimuths.map((azimuth, i) => {
+      const radius = (aSides[i] ?? 0) + reach / 2;
+      return {
+        x: -radius * Math.sin(azimuth),
+        z: -radius * Math.cos(azimuth),
+        rotY: azimuth,
+      };
+    });
+  }, [azimuths, aSides, ratio]);
+
+  return (
+    <group position={[0, y, 0]}>
+      {layout ? (
+        <>
+          {layout.beds.map((bed, i) => (
+            <mesh
+              key={`bed-${i}`}
+              geometry={bed.geometry}
+              material={metal}
+              position={bed.position}
+              rotation={new THREE.Euler(...bed.rotation, "YXZ")}
+            />
+          ))}
+          {partGroups.map(({ model, placements }) => (
+            <HaloParts
+              key={model}
+              model={model}
+              placements={placements}
+              scale={ratio}
+              metal={metal}
+              envMap={envMap}
+            />
+          ))}
+        </>
+      ) : (
+        <LegacyHaloRing
+          stone={stone}
+          dims={dims}
+          prongWidth={prongWidth}
+          armParts={armParts}
+          metal={metal}
+          envMap={envMap}
+        />
+      )}
+
+      {arms.map((arm, i) => (
+        <group key={i} position={[arm.x, 0, arm.z]}>
+          <group rotation={[0, arm.rotY, 0]} scale={ratio}>
+            {drawable(armParts).map((m, j) => (
+              <mesh key={`arm-${j}`} geometry={m.geometry} material={metal} />
+            ))}
+            {drawable(haloTipParts).map((m, j) => (
+              <mesh key={`tip-${j}`} geometry={m.geometry} material={metal} />
+            ))}
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/**
+ * The old parametric ring, kept only for the outlines whose real layout isn't ported yet.
+ *
+ * It wraps one superellipse around every shape and never places a corner piece, so on anything
+ * with corners the blocks splay across the turn instead of mitring into it. Delete a case from
+ * `haloLayout`'s fallback and this stops being reachable for that shape.
+ */
+function LegacyHaloRing({
+  stone,
+  dims,
+  prongWidth,
+  armParts,
+  metal,
+  envMap,
+}: {
+  stone: Stone;
+  dims: ReturnType<typeof stoneDimensionsAtCarat>;
+  prongWidth: number;
+  armParts: ReturnType<typeof useBakedParts>;
+  metal: THREE.Material;
+  envMap: THREE.Texture;
+}) {
   const model = haloEdgeModel(stone.name);
   const parts = useBakedParts(model);
 
   const pieces = useMemo(() => {
     const radial = partSpan(parts, "x") * prongWidth;
-    // Pitch on the melee, not the metal segment, so the stones sit shoulder to shoulder.
-    // For a 1ct round this comes out at 0.9mm — the "Pave Size 0.9mm" the source reports.
     const pitch = partSpan(parts, "z", "stones") * prongWidth;
-    // Sit the ring just outside the girdle so the melee collar the stone.
-    const atZero = dims.length / 2 + radial / 2;
-    const atQuarter = dims.width / 2 + radial / 2;
+    const clearance = partBound(armParts, "z", "max") * prongWidth;
+    const atZero = dims.length / 2 + clearance + radial / 2;
+    const atQuarter = dims.width / 2 + clearance + radial / 2;
     const exponent = outlineExponent(stone.name);
     const count = Math.max(
       8,
       Math.round(outlinePerimeter(atZero, atQuarter, exponent) / pitch),
     );
-    return ringFrames(count, atZero, atQuarter, exponent);
-  }, [parts, prongWidth, dims.length, dims.width, stone.name]);
-
-  const y = hidden
-    ? haloHeight(stoneY, dims.pavHeight, dims.girdleThickness) -
-      dims.girdleThickness -
-      partSpan(parts, "x") * prongWidth
-    : haloHeight(stoneY, dims.pavHeight, dims.girdleThickness);
+    return ringFrames(count, atZero, atQuarter, exponent, "x");
+  }, [parts, armParts, prongWidth, dims.length, dims.width, stone.name]);
 
   return (
     <RimRing
       model={model}
       pieces={pieces}
-      y={y}
+      y={0}
       scale={prongWidth}
       metal={metal}
       envMap={envMap}
@@ -1062,6 +1314,7 @@ export default function RingScene({
   prongAngles = [],
   prongCountType = "4 Classic",
   prongTipModel = "/models/ClawTip.glb",
+  prongTipId = "Claw",
   prongMetalColor,
   prongPave = false,
   basketHalo = "None",
@@ -1131,9 +1384,13 @@ export default function RingScene({
               stone={stone}
               carat={carat}
               prongWidth={head.prongWidth}
+              ratio={haloThicknessRatio(carat)}
               stoneY={head.stoneY}
               color={prongMetalColor ?? metalColor}
               hidden={false}
+              azimuths={prongAngles}
+              aSides={head.aSides}
+              tipId={prongTipId}
             />
           )}
 

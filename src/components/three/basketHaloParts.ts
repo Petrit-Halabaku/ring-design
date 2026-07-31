@@ -7,6 +7,8 @@
  * are not used here; nothing in this build renders that mode.
  */
 
+import type { HaloPart } from "@/lib/settings/haloLayout";
+
 /** Basket block family: the piece that sits at each prong. */
 function basketBlockFamily(shape: string): string {
   if (shape === "Round") return "Round";
@@ -74,6 +76,26 @@ export function haloCornerModel(shape: string, mirrored = false): string {
   const family = haloFamily(shape);
   const suffix = mirrored && family === "Asscher" ? "Mirrored" : "";
   return `/models/using/halo/block/${family}Corner${suffix}.glb`;
+}
+
+/**
+ * Resolves a layout's abstract part to its GLB.
+ *
+ * `edgeWide` is the `*EdgeExtraMetal` block, which only Princess and Asscher ship. A layout
+ * asks for it when its own spacing solve leaves a gap the plain block cannot close, so it can
+ * only ever be requested by a shape that has one.
+ */
+export function haloPartModel(shape: string, part: HaloPart): string {
+  switch (part) {
+    case "corner":
+      return haloCornerModel(shape);
+    case "cornerMirrored":
+      return haloCornerModel(shape, true);
+    case "edgeWide":
+      return `/models/using/halo/block/${haloFamily(shape)}EdgeExtraMetal.glb`;
+    default:
+      return haloEdgeModel(shape);
+  }
 }
 
 /** The arm that carries a halo down onto the band. */

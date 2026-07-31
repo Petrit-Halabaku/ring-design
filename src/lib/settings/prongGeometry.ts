@@ -77,10 +77,12 @@ export function prongWidthAtCarat(carat: number): number {
 }
 
 /**
- * The same stepping as `prongWidthAtCarat` but without its 1.3 cap. The configurator uses
- * this one — and only this one — when sizing a basket or bezel.
+ * The same stepping as `prongWidthAtCarat` but without its 1.3 cap — the configurator's
+ * `haloThicknessRatio`. It uses this one, and only this one, to size a basket, a bezel or a
+ * halo, which is why the halo's own parts scale by it rather than by the prong width. Below
+ * about 5ct the two agree; above it the cap makes them diverge.
  */
-function uncappedProngWidth(carat: number): number {
+export function haloThicknessRatio(carat: number): number {
   return Math.min(Math.floor(10 * (0.8 + carat / 10)) / 10, 10) / 0.8;
 }
 
@@ -112,7 +114,7 @@ export function headOffsets(
   cathedral: boolean,
 ): HeadOffsets {
   const prongWidth = prongWidthAtCarat(carat);
-  const sized = uncappedProngWidth(carat);
+  const sized = haloThicknessRatio(carat);
   const seat = prongWidth / REF_DIAMETER;
   const grip = 0.715 * prongWidth;
 

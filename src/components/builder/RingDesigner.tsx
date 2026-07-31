@@ -317,6 +317,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               prongAngles={angles}
               prongCountType={activeProngCount}
               prongTipModel={prongTipModel(prongTip)}
+              prongTipId={prongTip}
               prongMetalColor={prongMetal.material.color}
               prongPave={prongPave}
               basketHalo={basketHalo}
