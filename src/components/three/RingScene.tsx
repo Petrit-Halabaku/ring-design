@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useLayoutEffect, useMemo } from "react";
+import { Suspense, useDeferredValue, useLayoutEffect, useMemo } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import {
   MeshRefractionMaterial,
@@ -1123,14 +1123,31 @@ function Halo({
   const armParts = useBakedParts(haloArmModel(stone.name));
   const haloTipParts = useBakedParts(haloTipModel(stone.name, tipId));
 
+  /**
+   * The rail lags the carat slider by a frame or two.
+   *
+   * Cushion, marquise and pear solve their spacing by numerically integrating the outline and
+   * hunting for each seat along it — about 200ms of arithmetic. That is the source's algorithm
+   * and its sample count is load-bearing, so it cannot be cheapened without moving the seats.
+   * Deferring it instead lets React collapse a drag into one solve at the end: the stone and
+   * prongs track the slider live, and the rail resizes a beat later.
+   */
+  const laggedCarat = useDeferredValue(carat);
+  const railRatio = haloThicknessRatio(laggedCarat);
+  const railDims = useMemo(
+    () => stoneDimensionsAtCarat(stone, laggedCarat),
+    [stone, laggedCarat],
+  );
+
   const layout = useMemo(
     () =>
       haloLayout(stone.name, {
-        width: dims.width,
-        length: dims.length,
-        ratio,
+        width: railDims.width,
+        length: railDims.length,
+        carat: laggedCarat,
+        ratio: railRatio,
       }),
-    [stone.name, dims.width, dims.length, ratio],
+    [stone.name, railDims.width, railDims.length, laggedCarat, railRatio],
   );
 
   // The beds are generated, so this component owns them.
@@ -1199,7 +1216,9 @@ function Halo({
               key={model}
               model={model}
               placements={placements}
-              scale={ratio}
+              // Scaled to match the seats the layout solved, not the live carat, so a lagging
+              // rail stays internally consistent while it catches up.
+              scale={railRatio}
               metal={metal}
               envMap={envMap}
             />

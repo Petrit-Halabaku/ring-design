@@ -38,6 +38,8 @@ export type HaloInput = {
   width: number;
   /** Stone length, mm. */
   length: number;
+  /** Only the cushion reads this, to tighten its pitch on small stones. */
+  carat: number;
   /**
    * The source's `haloThicknessRatio` — the uncapped carat step. Every part is scaled by it
    * and every dimension below is derived from it, so it is the halo's single size input.
