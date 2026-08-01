@@ -31,6 +31,7 @@ import {
   type HaloPlacement,
 } from "@/lib/settings/haloLayout";
 import { rimThickness } from "@/lib/settings/haloLayout/types";
+import { bezelGeometry, bezelHeight } from "@/lib/settings/bezelGeometry";
 import {
   basketHeight,
   basketMeasurements,
@@ -329,6 +330,20 @@ function useMillimetreGeometries(
    * all that's needed.
    */
   widthMm?: number,
+  /**
+   * Drop the node hierarchy's translation, keeping only its rotation and scale.
+   *
+   * The configurator reads a centre stone as `scene.children[0].geometry` — the raw buffer,
+   * with no node transform applied at all — so any translation authored into the hierarchy is
+   * simply never seen. Eight of the nine stones are authored with none, but
+   * `EmeraldDiamond.glb` carries one on `Emerald_MainMin001`, which under its ×1000 root scale
+   * threw the stone clear of its own prongs here while the source rendered it centred.
+   *
+   * Only the translation is dropped, never the bounding box re-centred: a pear is genuinely
+   * asymmetric about its origin (z −5.98 → 2.77, origin at the round end) and centring it would
+   * break it.
+   */
+  dropTranslation = false,
 ) {
   const geometries = useMemo(() => {
     const box = meshBounds(meshes);
@@ -338,12 +353,19 @@ function useMillimetreGeometries(
 
     return meshes.map((m) => {
       const g = m.geometry.clone();
-      g.applyMatrix4(m.matrix);
+      const matrix = m.matrix;
+      if (dropTranslation) {
+        const stripped = matrix.clone();
+        stripped.setPosition(0, 0, 0);
+        g.applyMatrix4(stripped);
+      } else {
+        g.applyMatrix4(matrix);
+      }
       g.applyMatrix4(scaleToMm);
       g.computeBoundingBox();
       return g;
     });
-  }, [meshes, widthMm]);
+  }, [meshes, widthMm, dropTranslation]);
 
   useLayoutEffect(() => () => geometries.forEach((g) => g.dispose()), [geometries]);
   return geometries;
@@ -364,8 +386,10 @@ function CenterStone({
   const meshes = useGlbMeshes(model);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
 
-  // Baked at the stone's 1ct millimetre size, so this is stable across carat changes.
-  const geometries = useMillimetreGeometries(meshes, stone.dimensions.width);
+  // Baked at the stone's 1ct millimetre size, so this is stable across carat changes. The
+  // node translation is dropped to match how the source reads a centre stone — see
+  // useMillimetreGeometries.
+  const geometries = useMillimetreGeometries(meshes, stone.dimensions.width, true);
 
   // All that's left for the model matrix: how much bigger this carat is than 1ct.
   const caratScale =
@@ -994,49 +1018,53 @@ function useBasketRail(
 function Bezel({
   stone,
   carat,
-  prongWidth,
   stoneY,
   color,
 }: {
   stone: Stone;
   carat: number;
-  prongWidth: number;
   stoneY: number;
   color: string;
 }) {
   const metal = useMetalMaterial(color);
   const dims = stoneDimensionsAtCarat(stone, carat);
 
-  const { geometry, squash } = useMemo(() => {
-    const girdleY = dims.pavHeight;
-    const wall = 0.26 * prongWidth;
-    const inner = dims.width / 2 - 0.03;
-    const outer = inner + wall;
-    // A collar, not a cup: it clears the girdle by a thin lip and stops well short of the
-    // table so the whole crown stays proud, the way the source's bezel reads from above.
-    const top = girdleY + dims.girdleThickness + 0.1 * prongWidth;
-    const bottom = girdleY - 0.5 * prongWidth;
+  /**
+   * Deferred for the same reason the halo's rail is: a cushion, marquise or pear collar solves
+   * its outline by numerically integrating the curve, which is far too slow to run per frame
+   * while the carat slider moves. See the Halo component.
+   */
+  const laggedCarat = useDeferredValue(carat);
+  const collarDims = useMemo(
+    () => stoneDimensionsAtCarat(stone, laggedCarat),
+    [stone, laggedCarat],
+  );
+  const collarProngWidth = prongWidthAtCarat(laggedCarat);
 
-    const profile = [
-      new THREE.Vector2(inner, bottom),
-      new THREE.Vector2(outer, bottom),
-      new THREE.Vector2(outer, top),
-      new THREE.Vector2(inner, top),
-      new THREE.Vector2(inner, bottom),
-    ];
-    const g = new THREE.LatheGeometry(profile, 128);
-    g.computeVertexNormals();
-    return {
-      geometry: g,
-      // An oval or marquise stretches the collar along its length axis.
-      squash: dims.length / dims.width,
-    };
-  }, [dims.width, dims.length, dims.pavHeight, dims.girdleThickness, prongWidth]);
+  const geometry = useMemo(
+    () =>
+      bezelGeometry(stone.name, {
+        width: collarDims.width,
+        length: collarDims.length,
+        girdleThickness: collarDims.girdleThickness,
+        prongWidth: collarProngWidth,
+      }),
+    [stone.name, collarDims, collarProngWidth],
+  );
 
-  useLayoutEffect(() => () => geometry.dispose(), [geometry]);
+  useLayoutEffect(() => () => geometry?.dispose(), [geometry]);
+
+  const y = bezelHeight(
+    stoneY,
+    dims.pavHeight,
+    dims.girdleThickness,
+    collarProngWidth,
+  );
+
+  if (!geometry) return null;
 
   return (
-    <group position={[0, stoneY, 0]} scale={[1, 1, squash]}>
+    <group position={[0, y, 0]}>
       <mesh geometry={geometry} material={metal} />
     </group>
   );
@@ -1417,7 +1445,6 @@ export default function RingScene({
             <Bezel
               stone={stone}
               carat={carat}
-              prongWidth={head.prongWidth}
               stoneY={head.stoneY}
               color={prongMetalColor ?? metalColor}
             />

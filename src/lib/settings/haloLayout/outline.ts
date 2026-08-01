@@ -28,14 +28,33 @@ function speed(theta: number, a: number, b: number): number {
 }
 
 /**
- * Trapezoidal integral of the ellipse's speed from `from` to `to`.
+ * Samples the trapezoidal integral below uses. The source fixes 1000 regardless of how short
+ * the span is, which is wildly wasteful on the tiny spans the hunt probes.
  *
- * The source fixes 1000 samples regardless of how short the span is. That is wasteful on the
- * tiny spans the hunt below probes, but the sample count changes the answer, so it stays — the
- * loop is inlined instead, which costs nothing in accuracy.
+ * It stays the default anyway, because the halo's block counts pass through `floor()` and a
+ * different integral could tip one by a whole stone.
+ *
+ * Callers that only ever *position* things — the bezel — pass a smaller count. The hunt's final
+ * `-1e-5` rung quantises its answer, so most of the time a coarser integral lands in the same
+ * bucket and returns an identical θ. Not always, though: swept across nine carats and the three
+ * blended shapes, 100 samples moves a vertex by at most 2.3e-4 mm against 1000. That is
+ * invisible on a 6mm stone and, with nothing downstream being counted, cannot change anything
+ * structural.
  */
-export function arcLength(from: number, to: number, a: number, b: number): number {
-  const samples = 1000;
+export const ARC_SAMPLES = 1000;
+
+/**
+ * Trapezoidal integral of the ellipse's speed from `from` to `to`. The loop is inlined, which
+ * costs nothing in accuracy.
+ */
+
+export function arcLength(
+  from: number,
+  to: number,
+  a: number,
+  b: number,
+  samples = ARC_SAMPLES,
+): number {
   const step = (to - from) / samples;
 
   let total = (speed(from, a, b) + speed(to, a, b)) / 2;
@@ -62,6 +81,7 @@ function advance(
   a: number,
   b: number,
   refinements: readonly number[],
+  samples: number,
 ): number {
   let theta = start;
   let length = 0;
@@ -69,12 +89,12 @@ function advance(
     if (step > 0) {
       while (length < target) {
         theta += step;
-        length = arcLength(start, theta, a, b);
+        length = arcLength(start, theta, a, b, samples);
       }
     } else {
       while (length > target) {
         theta += step;
-        length = arcLength(start, theta, a, b);
+        length = arcLength(start, theta, a, b, samples);
       }
     }
   }
@@ -87,11 +107,13 @@ const OVAL_REFINEMENTS = [0.05, -0.001, 1e-4] as const;
 /** Everywhere else: the same, plus one more backward creep. */
 const BLENDED_REFINEMENTS = [0.05, -0.001, 1e-4, -1e-5] as const;
 
-export const advanceOval = (s: number, t: number, a: number, b: number) =>
-  advance(s, t, a, b, OVAL_REFINEMENTS);
+export const advanceOval = (
+  s: number, t: number, a: number, b: number, samples = ARC_SAMPLES,
+) => advance(s, t, a, b, OVAL_REFINEMENTS, samples);
 
-export const advanceBlended = (s: number, t: number, a: number, b: number) =>
-  advance(s, t, a, b, BLENDED_REFINEMENTS);
+export const advanceBlended = (
+  s: number, t: number, a: number, b: number, samples = ARC_SAMPLES,
+) => advance(s, t, a, b, BLENDED_REFINEMENTS, samples);
 
 /** Ramanujan's first approximation to an ellipse's perimeter. */
 export function ellipsePerimeter(a: number, b: number): number {
@@ -116,11 +138,11 @@ export function arcSpacedThetas(
   a: number,
   b: number,
   step = ellipsePerimeter(a, b) / count,
-  advanceFn = advanceBlended,
+  samples = ARC_SAMPLES,
 ): number[] {
   const thetas = [0];
   for (let i = 0; i < count - 1; i++) {
-    thetas.push(advanceFn(thetas[thetas.length - 1], step, a, b));
+    thetas.push(advanceBlended(thetas[thetas.length - 1], step, a, b, samples));
   }
   return thetas;
 }
@@ -276,4 +298,151 @@ export function blendPoint(
     x: keep * node.x + weight * polygon.x,
     z: keep * node.z + weight * polygon.z,
   };
+}
+
+/**
+ * Closed outlines, one per stone shape.
+ *
+ * Both the halo's bed and the bezel's collar are built by evaluating one of these at a series
+ * of sizes and heights, so they live here rather than in either. Each returns exactly `count`
+ * points, walked in a consistent direction so consecutive rings can be stitched together.
+ */
+
+/** Plain circle — the round bezel's ring. Uses the `cos, sin` order the source's does. */
+export function circleRing(count: number, radius: number): PlanePoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    const t = (i / count) * 2 * Math.PI;
+    return { x: radius * Math.cos(t), z: radius * Math.sin(t) };
+  });
+}
+
+/** Plain ellipse, same walk as `circleRing`. */
+export function ellipseRing(count: number, x: number, z: number): PlanePoint[] {
+  return Array.from({ length: count }, (_, i) => {
+    const t = (i / count) * 2 * Math.PI;
+    return { x: x * Math.cos(t), z: z * Math.sin(t) };
+  });
+}
+
+/** A cushion: ellipse mixed with rectangle, the rectangle read one point behind. */
+export function cushionRing(
+  count: number,
+  x: number,
+  z: number,
+  floor: number,
+  samples = ARC_SAMPLES,
+): PlanePoint[] {
+  const nodes = ellipseNodes(arcSpacedThetas(count, z, x, undefined, samples), z, x);
+  const rect = rectanglePoints(count, z, x);
+  return nodes.map((node, i) => {
+    const mate = rect[(i + count - 1) % count];
+    return blendPoint(node, mate, cushionWeight(mate, z, x, floor));
+  });
+}
+
+/** A marquise: ellipse pulled onto points by a rhombus. */
+export function marquiseRing(
+  count: number,
+  x: number,
+  z: number,
+  overhang: number,
+  taper: number,
+  samples = ARC_SAMPLES,
+): PlanePoint[] {
+  const nodes = ellipseNodes(arcSpacedThetas(count, z, x, undefined, samples), z, x);
+  const rhombus = rhombusPoints(count, z + overhang, x);
+  return nodes.map((node, i) =>
+    blendPoint(node, rhombus[i], taperWeight(rhombus[i], x, taper)),
+  );
+}
+
+/** A pear: the marquise blend over half the outline, the bare ellipse over the other. */
+export function pearRing(
+  count: number,
+  x: number,
+  z: number,
+  overhang: number,
+  taper: number,
+  samples = ARC_SAMPLES,
+): PlanePoint[] {
+  const nodes = pearEllipseNodes(arcSpacedThetas(count, z, x, undefined, samples), z, x);
+  const rhombus = rhombusPoints(count, z + overhang, x, true);
+  return nodes.map((node, i) =>
+    isCollapsed(rhombus[i])
+      ? { x: node.x, z: node.z }
+      : blendPoint(node, rhombus[i], taperWeight(rhombus[i], x, taper)),
+  );
+}
+
+/**
+ * A princess: a rectangle with rounded corners.
+ *
+ * Walked as four straight runs of `count/4 − 12` points alternating with four twelve-point
+ * corner arcs, which is how the source splits it.
+ */
+export function roundedRectRing(
+  count: number,
+  x: number,
+  z: number,
+  radius: number,
+): PlanePoint[] {
+  const points: PlanePoint[] = [];
+  const straight = count / 4 - 12;
+  const spanX = (2 * x - 2 * radius) / (straight - 1);
+  const spanZ = (2 * z - 2 * radius) / (straight - 1);
+  const arc = (i: number) => (Math.PI / 2 / 12) * i;
+
+  for (let i = 0; i < straight; i++) points.push({ x: x - radius - spanX * i, z });
+  for (let i = 0; i < 12; i++) {
+    points.push({
+      x: -x + radius - radius * Math.sin(arc(i)),
+      z: z - radius + radius * Math.cos(arc(i)),
+    });
+  }
+  for (let i = 0; i < straight; i++) points.push({ x: -x, z: z - radius - spanZ * i });
+  for (let i = 0; i < 12; i++) {
+    points.push({
+      x: -x + radius - radius * Math.cos(arc(i)),
+      z: -z + radius - radius * Math.sin(arc(i)),
+    });
+  }
+  for (let i = 0; i < straight; i++) points.push({ x: -x + radius + spanX * i, z: -z });
+  for (let i = 0; i < 12; i++) {
+    points.push({
+      x: x - radius + radius * Math.sin(arc(i)),
+      z: -z + radius - radius * Math.cos(arc(i)),
+    });
+  }
+  for (let i = 0; i < straight; i++) points.push({ x, z: -z + radius + spanZ * i });
+  for (let i = 0; i < 12; i++) {
+    points.push({
+      x: x - radius + radius * Math.cos(arc(i)),
+      z: z - radius + radius * Math.sin(arc(i)),
+    });
+  }
+  return points;
+}
+
+/**
+ * An Asscher, Emerald or Radiant: a rectangle whose four runs stop `cut` short of each corner.
+ *
+ * There are no corner points at all — the chamfer is the straight line the stitching draws
+ * between the end of one run and the start of the next.
+ */
+export function cutCornerRing(
+  count: number,
+  x: number,
+  z: number,
+  cut: number,
+): PlanePoint[] {
+  const points: PlanePoint[] = [];
+  const per = count / 4;
+  const spanX = (2 * x - 2 * cut) / (per - 1);
+  const spanZ = (2 * z - 2 * cut) / (per - 1);
+
+  for (let i = 0; i < per; i++) points.push({ x: x - cut - spanX * i, z });
+  for (let i = 0; i < per; i++) points.push({ x: -x, z: z - cut - spanZ * i });
+  for (let i = 0; i < per; i++) points.push({ x: -x + cut + spanX * i, z: -z });
+  for (let i = 0; i < per; i++) points.push({ x, z: -z + cut + spanZ * i });
+  return points;
 }
