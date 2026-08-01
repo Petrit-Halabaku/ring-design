@@ -25,6 +25,7 @@ import {
   type BasketHaloId,
 } from "@/lib/settings/basketHalo";
 import { BAND_FITS, BAND_STYLES } from "@/lib/settings/bandGeometry";
+import { BAND_PAVE_LENGTHS } from "@/lib/settings/bandPave";
 import type { RingSettings } from "@/lib/settings/types";
 
 /**
@@ -69,6 +70,18 @@ const STATIC_PANELS: Panel[] = [
         hint: "Comfort Fit",
         selected: 0,
         choices: [{ label: "Comfort Fit" }, { label: "Standard Fit" }],
+      },
+      {
+        label: "Pave Length",
+        hint: "Half",
+        selected: 1,
+        choices: [
+          { label: "One Third" },
+          { label: "Half" },
+          { label: "Two Thirds" },
+          { label: "Three Quarters" },
+          { label: "Eternity" },
+        ],
       },
     ],
   },
@@ -325,6 +338,15 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               cathedral={(selections["band-1"] ?? 0) === 1}
               bandStyle={BAND_STYLES[selections["band-0"] ?? 0] ?? "Round"}
               bandFit={BAND_FITS[selections["band-3"] ?? 0] ?? "Comfort Fit"}
+              engravingText={engraving}
+              engravingFont={
+                (selections["more-0"] ?? 0) === 1 ? "Cursive" : "Block"
+              }
+              surpriseStones={(selections["more-1"] ?? 0) === 1}
+              bandPave={(selections["band-2"] ?? 0) === 1}
+              bandPaveLength={
+                BAND_PAVE_LENGTHS[selections["band-4"] ?? 1] ?? "Half"
+              }
             />
           </div>
 

@@ -20,9 +20,15 @@ const AVAILABLE = new Set([
   "ClawTip",
 ]);
 
-export const BAND_MODEL = "/models/test/band/Band0.22V2.glb";
+/** One bead of a Petite French pavé run, and the handed pieces that cap each end. */
+export const BAND_PAVE_MIDDLE = "/models/test/band/Band0.22V2.glb";
+export const BAND_PAVE_OPEN_LEFT = "/models/test/band/Band0.22NoMetalLeft.glb";
+export const BAND_PAVE_OPEN_RIGHT = "/models/test/band/Band0.22NoMetalRight.glb";
 export const CATHEDRAL_BAND_MODEL = "/models/test/band/Cathedral0.22V3.glb";
 export const PAVE_MODEL = "/models/DiamondPave.glb";
+
+/** The pair of small stones set into the band's flanks. */
+export const SURPRISE_STONE = "/models/test/SurpriseStone.glb";
 export const BASKET_MODEL = "/models/using/basket/Block/RoundBlock0.15.glb";
 
 const modelBaseName = (glbUrl: string) =>

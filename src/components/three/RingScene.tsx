@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useDeferredValue, useLayoutEffect, useMemo } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useLoader, useThree } from "@react-three/fiber";
 import {
   MeshRefractionMaterial,
   OrbitControls,
@@ -9,6 +9,18 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { useGlbMeshes } from "./useGlbMeshes";
+import {
+  BAND_PAVE_MIDDLE,
+  BAND_PAVE_OPEN_LEFT,
+  BAND_PAVE_OPEN_RIGHT,
+  SURPRISE_STONE,
+} from "@/lib/settings/models";
+import {
+  bandPaveLayout,
+  bandPaveThickness,
+  type BandPaveLength,
+  type BandPavePart,
+} from "@/lib/settings/bandPave";
 import {
   bakeToMillimetres,
   drawable,
@@ -34,10 +46,21 @@ import { rimThickness } from "@/lib/settings/haloLayout/types";
 import { bezelGeometry, bezelHeight } from "@/lib/settings/bezelGeometry";
 import {
   bandGeometry,
+  bandInnerRadius,
   bandOuterRadius,
+  cathedralPath,
+  cathedralShoulders,
+  BAND_THICKNESS,
+  type CathedralShoulders,
   type BandFit,
   type BandStyle,
 } from "@/lib/settings/bandGeometry";
+import {
+  buildEngraving,
+  ENGRAVING_FONTS,
+  type EngravingFont,
+} from "@/lib/settings/engraving";
+import { FontLoader } from "three/examples/jsm/loaders/FontLoader.js";
 import {
   basketHeight,
   basketMeasurements,
@@ -180,6 +203,14 @@ export type SceneProps = {
   bandStyle?: BandStyle;
   /** Inner profile of the band — the face against the finger. */
   bandFit?: BandFit;
+  /** Message laser-engraved inside the band. */
+  engravingText?: string;
+  engravingFont?: EngravingFont;
+  /** A pair of small stones set into the band's flanks, under the head. */
+  surpriseStones?: boolean;
+  /** Melee set into the band's shoulders. */
+  bandPave?: boolean;
+  bandPaveLength?: BandPaveLength;
 };
 
 /**
@@ -1382,24 +1413,278 @@ function LegacyHaloRing({
   );
 }
 
+/**
+ * The message engraved inside the band.
+ *
+ * Sits in the shank's own frame so it rides with the ring's size, and is drawn in the band's
+ * metal so it reads as cut into the surface rather than applied to it.
+ */
+function Engraving({
+  text,
+  font,
+  ringSize,
+  color,
+  thickness,
+}: {
+  text: string;
+  font: EngravingFont;
+  ringSize: number;
+  color: string;
+  thickness: number;
+}) {
+  const metal = useMetalMaterial(color);
+  const loaded = useLoader(FontLoader, ENGRAVING_FONTS[font]);
+
+  const glyphs = useMemo(
+    () => buildEngraving(text, loaded, bandInnerRadius(ringSize)),
+    [text, loaded, ringSize],
+  );
+
+  useLayoutEffect(
+    () => () => glyphs.forEach((g) => g.geometry.dispose()),
+    [glyphs],
+  );
+
+  if (glyphs.length === 0) return null;
+
+  return (
+    <group position={[0, -bandOuterRadius(ringSize, thickness), 0]}>
+      {glyphs.map((glyph, i) => (
+        <mesh
+          key={i}
+          geometry={glyph.geometry}
+          material={metal}
+          matrixAutoUpdate={false}
+          matrix={glyph.matrix}
+        />
+      ))}
+    </group>
+  );
+}
+
+/**
+ * Surprise stones — a mirrored pair set into the band's flanks just below the head.
+ *
+ * Placed exactly where the source puts them: `bandInnerRadius + 1.1` up from the ring's centre,
+ * which is 0.7mm under the band's outer face, and out to either side by
+ * `max(bandWidth/2, 0.9) − 0.5`. The second is turned through half a turn so both face outward.
+ */
+function SurpriseStones({
+  ringSize,
+  bandWidthMm,
+  color,
+  thickness,
+}: {
+  ringSize: number;
+  bandWidthMm: number;
+  color: string;
+  thickness: number;
+}) {
+  const parts = useBakedParts(SURPRISE_STONE);
+  const metal = useMetalMaterial(color);
+  const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
+
+  const y =
+    bandInnerRadius(ringSize) + 1.1 - bandOuterRadius(ringSize, thickness);
+  const z = Math.max(0.5 * bandWidthMm, 0.9) - 0.5;
+
+  const meshes = drawable(parts);
+  const render = () =>
+    meshes.map((m, i) =>
+      isSetStone(m.name) ? (
+        <mesh key={`stone-${i}`} geometry={m.geometry}>
+          <MeshRefractionMaterial
+            envMap={envMap}
+            {...DIAMOND_MATERIAL}
+            toneMapped={false}
+          />
+        </mesh>
+      ) : (
+        <mesh key={`metal-${i}`} geometry={m.geometry} material={metal} />
+      ),
+    );
+
+  return (
+    <>
+      <group position={[0, y, z]}>{render()}</group>
+      <group position={[0, y, -z]} rotation={[0, Math.PI, 0]}>
+        {render()}
+      </group>
+    </>
+  );
+}
+
+const BAND_PAVE_MODELS: Record<BandPavePart, string> = {
+  middle: BAND_PAVE_MIDDLE,
+  openLeft: BAND_PAVE_OPEN_LEFT,
+  openRight: BAND_PAVE_OPEN_RIGHT,
+};
+
+/** One authored pavé piece, instanced at each of its slots. */
+function BandPaveRun({
+  model,
+  placements,
+  radius,
+  scale,
+  metal,
+  envMap,
+  base,
+  cathedral,
+}: {
+  model: string;
+  placements: { angle: number }[];
+  radius: number;
+  scale: number;
+  metal: THREE.Material;
+  envMap: THREE.Texture;
+  base: number;
+  cathedral: CathedralShoulders | null;
+}) {
+  const parts = useBakedParts(model);
+  const meshes = useMemo(() => drawable(parts), [parts]);
+
+  /**
+   * The pieces are authored for a ring lying in xz with its width along y; this scene's ring
+   * lies in xy with its width along z. The quarter-turn about x re-seats them, and the spin
+   * about z then walks them round the band.
+   */
+  const matrices = useMemo(
+    () =>
+      placements.map(({ angle }) => {
+        // The layout works in angles measured from the head; the arch is solved in the same
+        // terms, so a bead on the rise lifts with the band instead of staying on the circle.
+        const sweep = Math.PI / 2 - angle;
+        const { up, side } = cathedralPath(sweep, radius, base, cathedral);
+        const m = new THREE.Matrix4()
+          .makeRotationZ(Math.atan2(up, side))
+          .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+        m.scale(new THREE.Vector3(scale, scale, scale));
+        m.setPosition(side, up, 0);
+        return m;
+      }),
+    [placements, radius, scale, base, cathedral],
+  );
+
+  return (
+    <>
+      {matrices.map((matrix, i) => (
+        <group key={i} matrixAutoUpdate={false} matrix={matrix}>
+          {meshes.map((m, j) =>
+            isSetStone(m.name) ? (
+              <mesh key={`stone-${j}`} geometry={m.geometry}>
+                <MeshRefractionMaterial
+                  envMap={envMap}
+                  {...DIAMOND_MATERIAL}
+                  toneMapped={false}
+                />
+              </mesh>
+            ) : (
+              <mesh key={`metal-${j}`} geometry={m.geometry} material={metal} />
+            ),
+          )}
+        </group>
+      ))}
+    </>
+  );
+}
+
+/** Petite French pavé along the band's shoulders. */
+function BandPave({
+  ringSize,
+  bandWidthMm,
+  prongWidth,
+  length,
+  color,
+  thickness,
+  cathedral,
+}: {
+  ringSize: number;
+  bandWidthMm: number;
+  prongWidth: number;
+  length: BandPaveLength;
+  color: string;
+  thickness: number;
+  cathedral: CathedralShoulders | null;
+}) {
+  const metal = useMetalMaterial(color);
+  const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
+
+  const layout = useMemo(
+    () =>
+      bandPaveLayout(
+        bandWidthMm,
+        bandInnerRadius(ringSize),
+        prongWidth,
+        length,
+      ),
+    [bandWidthMm, ringSize, prongWidth, length],
+  );
+
+  const runs = useMemo(() => {
+    const grouped = new Map<BandPavePart, { angle: number }[]>();
+    for (const p of layout.placements) {
+      const run = grouped.get(p.part);
+      if (run) run.push({ angle: p.angle });
+      else grouped.set(p.part, [{ angle: p.angle }]);
+    }
+    return [...grouped];
+  }, [layout]);
+
+  return (
+    <group position={[0, -bandOuterRadius(ringSize, thickness), 0]}>
+      {runs.map(([part, placements]) => (
+        <BandPaveRun
+          key={part}
+          model={BAND_PAVE_MODELS[part]}
+          placements={placements}
+          radius={layout.radius}
+          scale={layout.scale}
+          metal={metal}
+          envMap={envMap}
+          base={bandInnerRadius(ringSize) + 0.2 * BAND_THICKNESS}
+          cathedral={cathedral}
+        />
+      ))}
+    </group>
+  );
+}
+
 function Shank({
   color,
   ringSize,
   bandWidthMm,
   bandStyle,
   bandFit,
+  shelf,
+  thickness,
+  cathedral,
 }: {
   color: string;
   ringSize: number;
   bandWidthMm: number;
   bandStyle: BandStyle;
   bandFit: BandFit;
+  /** Depth the outer face is cut back by, when a pavé run is set into it. */
+  shelf: number;
+  /** Total radial thickness — a pavé run can deepen it past the plain 1.8mm. */
+  thickness: number;
+  /** Set when the shoulders rise to meet the head. */
+  cathedral: CathedralShoulders | null;
 }) {
   const metal = useMetalMaterial(color);
 
   const geometry = useMemo(
-    () => bandGeometry(bandStyle, bandFit, bandWidthMm, ringSize),
-    [bandStyle, bandFit, bandWidthMm, ringSize],
+    () =>
+      bandGeometry(
+        bandStyle,
+        bandFit,
+        bandWidthMm,
+        ringSize,
+        shelf,
+        thickness,
+        cathedral,
+      ),
+    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, cathedral],
   );
   useLayoutEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -1408,7 +1693,7 @@ function Shank({
     <mesh
       material={metal}
       geometry={geometry}
-      position={[0, -bandOuterRadius(ringSize), 0]}
+      position={[0, -bandOuterRadius(ringSize, thickness), 0]}
     />
   );
 }
@@ -1430,6 +1715,11 @@ export default function RingScene({
   cathedral = false,
   bandStyle = "Round",
   bandFit = "Comfort Fit",
+  engravingText = "",
+  engravingFont = "Block",
+  surpriseStones = false,
+  bandPave = false,
+  bandPaveLength = "Half",
 }: SceneProps) {
   const head = useHeadLayout(
     stone,
@@ -1439,6 +1729,47 @@ export default function RingScene({
     prongPave,
     basketHalo,
     cathedral,
+  );
+
+  // A pavé run deepens the band once its melee outgrow the plain dome, which lifts the head's
+  // seat with it. Both the shank and everything positioned off it share these two numbers.
+  const bandThickness = bandPave
+    ? bandPaveThickness(bandWidthMm)
+    : BAND_THICKNESS;
+  const bandShelf = bandPave
+    ? bandThickness - 0.2 * BAND_THICKNESS - 0.6351111111111111 * bandWidthMm
+    : 0;
+
+  // The cathedral's shoulders have to land on the head's own seat, so they are solved from it.
+  const dims = stoneDimensionsAtCarat(stone, carat);
+  const shoulders = useMemo(
+    () =>
+      cathedral
+        ? cathedralShoulders({
+            outerRadius: bandOuterRadius(ringSize, bandThickness),
+            seatHeight: basketHeight(
+              stone.name,
+              head.stoneY,
+              dims.pavHeight,
+              head.clearance,
+            ),
+            rimHeight: 0.8419 * head.prongWidth,
+            stoneWidth: dims.width,
+            prongWidth: head.prongWidth,
+            innerRadius: bandInnerRadius(ringSize),
+          })
+        : null,
+    [
+      cathedral,
+      ringSize,
+      bandThickness,
+      stone.name,
+      head.stoneY,
+      head.clearance,
+      head.prongWidth,
+      dims.pavHeight,
+      dims.width,
+    ],
   );
 
   // The ring stands ~20mm tall with the stone on top; this framing keeps both in view.
@@ -1462,7 +1793,41 @@ export default function RingScene({
             bandWidthMm={bandWidthMm}
             bandStyle={bandStyle}
             bandFit={bandFit}
+            shelf={bandShelf}
+            thickness={bandThickness}
+            cathedral={shoulders}
           />
+
+          {bandPave && (
+            <BandPave
+              ringSize={ringSize}
+              bandWidthMm={bandWidthMm}
+              prongWidth={head.prongWidth}
+              length={bandPaveLength}
+              color={metalColor}
+              thickness={bandThickness}
+              cathedral={shoulders}
+            />
+          )}
+
+          {engravingText.trim() && (
+            <Engraving
+              text={engravingText}
+              font={engravingFont}
+              ringSize={ringSize}
+              color={metalColor}
+              thickness={bandThickness}
+            />
+          )}
+
+          {surpriseStones && (
+            <SurpriseStones
+              ringSize={ringSize}
+              bandWidthMm={bandWidthMm}
+              color={prongMetalColor ?? metalColor}
+              thickness={bandThickness}
+            />
+          )}
           <CenterStone
             stone={stone}
             model={stoneModel}
