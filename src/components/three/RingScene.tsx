@@ -48,6 +48,7 @@ import {
   bandGeometry,
   bandInnerRadius,
   bandOuterRadius,
+  cathedralGeometry,
   cathedralPath,
   cathedralShoulders,
   BAND_THICKNESS,
@@ -1675,26 +1676,35 @@ function Shank({
 
   const geometry = useMemo(
     () =>
-      bandGeometry(
-        bandStyle,
-        bandFit,
-        bandWidthMm,
-        ringSize,
-        shelf,
-        thickness,
-        cathedral,
-      ),
-    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, cathedral],
+      bandGeometry(bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness),
+    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness],
   );
   useLayoutEffect(() => () => geometry.dispose(), [geometry]);
 
+  // The shoulders are added to the circle rather than swept into it.
+  const arches = useMemo(
+    () =>
+      cathedral
+        ? cathedralGeometry(
+            bandStyle,
+            bandFit,
+            bandWidthMm,
+            ringSize,
+            cathedral,
+            shelf,
+            thickness,
+          )
+        : null,
+    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness],
+  );
+  useLayoutEffect(() => () => arches?.dispose(), [arches]);
+
   // Dropped so the band's outer face — the head's seat — lands on y = 0.
   return (
-    <mesh
-      material={metal}
-      geometry={geometry}
-      position={[0, -bandOuterRadius(ringSize, thickness), 0]}
-    />
+    <group position={[0, -bandOuterRadius(ringSize, thickness), 0]}>
+      <mesh material={metal} geometry={geometry} />
+      {arches && <mesh material={metal} geometry={arches} />}
+    </group>
   );
 }
 

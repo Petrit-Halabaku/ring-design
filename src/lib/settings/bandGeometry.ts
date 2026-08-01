@@ -18,8 +18,8 @@
  *
  * Pavé reshapes this profile rather than being cut into it — see `shelf` below and `bandPave`.
  *
- * Cathedral is not an added part either: the sweep itself leaves the circle near the top and
- * rises to meet the head, pinching narrower as it goes. See `CathedralShoulders`.
+ * Cathedral is added rather than swept in: the band stays a true circle and the shoulders are
+ * their own solid. See `cathedralGeometry`.
  */
 import * as THREE from "three";
 
@@ -130,6 +130,17 @@ export function cathedralShoulders({
  * instead of staying on the circle the band has left behind. `sweep` is measured from the head:
  * zero at the top, growing either way round.
  */
+export function cathedralBlend(
+  sweep: number,
+  shoulders: CathedralShoulders | null,
+): number {
+  if (!shoulders) return 0;
+  const offset = Math.abs(((sweep + Math.PI) % (2 * Math.PI)) - Math.PI);
+  if (offset >= shoulders.angle) return 0;
+  const t = 1 - offset / shoulders.angle;
+  return t * t * (3 - 2 * t);
+}
+
 export function cathedralPath(
   sweep: number,
   radius: number,
@@ -148,7 +159,12 @@ export function cathedralPath(
   offset = Math.abs(offset);
   if (offset >= shoulders.angle) return circle;
 
-  const blend = 1 - offset / shoulders.angle;
+  // Smoothstepped, not linear. A linear blend has a non-zero slope where it meets the circle,
+  // so the arch would kink away from the band and leave a crease along the join; easing it to
+  // zero slope at both ends makes the shoulder leave the band tangentially and arrive at the
+  // anchor without a corner.
+  const t = 1 - offset / shoulders.angle;
+  const blend = t * t * (3 - 2 * t);
   const toAnchorUp = shoulders.height - Math.cos(shoulders.angle) * base;
   const toAnchorSide = shoulders.lateral - Math.sin(shoulders.angle) * base;
 
@@ -292,6 +308,83 @@ export function bandProfile(
 }
 
 /**
+ * The two cathedral shoulders, as a solid of their own.
+ *
+ * The band stays a true circle; these arches are added to it. Each is the same cross-section
+ * swept from where the shoulder leaves the circle up to the head's anchor, pinching to `neck` as
+ * it arrives — so at its foot it coincides exactly with the band and the join is seamless.
+ *
+ * This is a deliberate departure from the configurator, which deforms the band's own sweep
+ * instead of adding to it. Keeping the ring circular was the call here.
+ */
+export function cathedralGeometry(
+  style: BandStyle,
+  fit: BandFit,
+  width: number,
+  ringSize: number,
+  shoulders: CathedralShoulders,
+  shelf = 0,
+  thickness = BAND_THICKNESS,
+  segments = 256,
+): THREE.BufferGeometry {
+  const profile = bandProfile(style, fit, width, shelf, thickness);
+  const base = bandInnerRadius(ringSize) + INNER_DEPTH;
+  const ring = profile.length;
+
+  /**
+   * Held a hair under the band's own section.
+   *
+   * The arch is a *closed* ring, not two stubs: away from the shoulders it simply follows the
+   * circle, tucked just inside the band where nothing can see it. That is what removes the
+   * join — a solid that stops has to stop somewhere, and wherever it stopped its end showed as
+   * a line across the shank. This one never stops, so the only place it meets air is where the
+   * blend lifts it clear, and the smoothstep makes that emergence tangent.
+   */
+  const INSET = 0.997;
+
+  const positions: number[] = [];
+  for (let step = 0; step < segments; step++) {
+    const sweep = (step / segments) * 2 * Math.PI;
+    // Pinch measured off the angle, so both shoulders taper alike and the circular run between
+    // them stays at full section.
+    const offset = Math.abs(((sweep + Math.PI) % (2 * Math.PI)) - Math.PI);
+    const ease = Math.sin(
+      Math.min(1, offset / shoulders.angle) * (Math.PI / 2),
+    );
+    const taperRadial =
+      (shoulders.neck + (thickness - shoulders.neck) * ease) / thickness;
+    const taperAxial =
+      (shoulders.neck + (width - shoulders.neck) * ease) / width;
+
+    for (const p of profile) {
+      const r = base + p.radial * taperRadial * INSET;
+      const { up, side } = cathedralPath(sweep, r, base, shoulders);
+      positions.push(side, up, p.axial * taperAxial * INSET);
+    }
+  }
+
+  const index: number[] = [];
+  for (let step = 0; step < segments; step++) {
+    const next = (step + 1) % segments;
+    for (let i = 0; i < ring; i++) {
+      const j = (i + 1) % ring;
+      const a = step * ring + i;
+      const b = step * ring + j;
+      const c = next * ring + i;
+      const d = next * ring + j;
+      index.push(a, c, b);
+      index.push(b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
  * Sweeps the profile into a band.
  *
  * Built in the xy plane with the width running along z and the ring's centre at the origin, so
@@ -304,7 +397,6 @@ export function bandGeometry(
   ringSize: number,
   shelf = 0,
   thickness = BAND_THICKNESS,
-  cathedral: CathedralShoulders | null = null,
   segments = 256,
 ): THREE.BufferGeometry {
   const profile = bandProfile(style, fit, width, shelf, thickness);
@@ -312,62 +404,12 @@ export function bandGeometry(
   // nominal size rather than cutting inside it.
   const base = bandInnerRadius(ringSize) + INNER_DEPTH;
 
-  /** How many sweep steps the rise occupies at each shoulder. */
-  const rise = cathedral
-    ? Math.floor((cathedral.angle / (2 * Math.PI)) * segments)
-    : 0;
-  const arched = cathedral !== null && rise > 1;
-
-  // Offset from where the shoulder leaves the circle to the anchor it has to reach.
-  const toAnchorUp = arched
-    ? cathedral!.height - Math.cos(cathedral!.angle) * base
-    : 0;
-  const toAnchorSide = arched
-    ? cathedral!.lateral - Math.sin(cathedral!.angle) * base
-    : 0;
-
   const positions: number[] = [];
   for (const p of profile) {
+    const r = base + p.radial;
     for (let i = 0; i < segments; i++) {
       const sweep = (i / segments) * 2 * Math.PI;
-
-      // `blend` runs 1 at the head and 0 where the shoulder rejoins the circle. The far
-      // shoulder is the same rise mirrored, so it reads the step count from the other end.
-      let blend = 0;
-      let step = -1;
-      let mirror = 1;
-      if (arched) {
-        if (i < rise + 1) {
-          blend = 1 - i / rise;
-          step = i;
-        } else if (i > segments - rise - 1) {
-          step = segments - i - 1;
-          blend = 1 - step / (rise - 1);
-          mirror = -1;
-        }
-      }
-
-      let radial = p.radial;
-      let axial = p.axial;
-      if (step >= 0) {
-        const ease = Math.sin((step / (rise - 1)) * (Math.PI / 2));
-        const neck = cathedral!.neck;
-        radial *= (neck + (thickness - neck) * ease) / thickness;
-        axial *= (neck + (width - neck) * ease) / width;
-      }
-
-      const r = base + radial;
-      const up =
-        blend * (toAnchorUp * blend + Math.cos(cathedral?.angle ?? 0) * r) +
-        (1 - blend) * (r * Math.cos(sweep));
-      const side =
-        mirror *
-          blend *
-          (toAnchorSide * blend + Math.sin(cathedral?.angle ?? 0) * r) +
-        (1 - blend) * (r * Math.sin(sweep));
-
-      // The scene's ring lies in xy with the head at +y, so the sweep's "up" is our y.
-      positions.push(side, up, axial);
+      positions.push(r * Math.sin(sweep), r * Math.cos(sweep), p.axial);
     }
   }
 
