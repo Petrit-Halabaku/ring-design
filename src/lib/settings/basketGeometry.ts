@@ -1,3 +1,4 @@
+import { outlineRing, radiusAtBearing } from "./haloLayout/outline";
 /**
  * Basket and halo geometry, ported from the configurator's bundle.
  *
@@ -133,46 +134,44 @@ export function haloHeight(
 }
 
 /**
- * How square a shape's outline is, as a superellipse exponent: 2 is a true ellipse, higher
- * is squarer with tighter corners, lower is pointier.
+ * A stone's outline, sampled in polar form.
  *
- * A rim has to follow the stone it sits under. Running an ellipse around an Asscher leaves
- * the rail cutting the corners and bulging at the flats, which is exactly what it looks
- * like — so the squared shapes get a squared outline.
+ * Built once from the real per-shape curve — the same one the halo's rail and the bezel's collar
+ * follow — and then queried by azimuth. It replaces the superellipse this file used to assume:
+ * that could not represent a pear at all, being both symmetric and centred on the origin when a
+ * pear is neither, which left the basket rim a lens floating across an off-centre stone.
  */
-export function outlineExponent(shape: string): number {
-  switch (shape) {
-    case "Round":
-    case "Oval":
-      return 2;
-    case "Cushion":
-      return 3;
-    case "Princess":
-    case "Asscher":
-    case "Emerald":
-    case "Radiant":
-      return 4;
-    case "Marquise":
-    case "Pear":
-      return 1.6;
-    default:
-      return 2;
-  }
-}
+export type Outline = {
+  radiusAt(theta: number): number;
+};
 
-/**
- * Radius of the outline at an azimuth, with `atZero` along θ=0 — the convention
- * `prongASides` uses, so a rim stays concentric with the prong seats.
- */
-export function outlineRadius(
-  theta: number,
+/** `atZero` is the semi-axis along z (the length), `atQuarter` the one along x. */
+export function makeOutline(
+  shape: string,
   atZero: number,
   atQuarter: number,
-  exponent = 2,
-): number {
-  const c = Math.abs(Math.cos(theta)) ** exponent / atZero ** exponent;
-  const s = Math.abs(Math.sin(theta)) ** exponent / atQuarter ** exponent;
-  return (c + s) ** (-1 / exponent);
+  /**
+   * Integration samples for the shapes whose outline is arc-length solved.
+   *
+   * Deliberately far below the source's 1000. The rim layout below already solves its spacing
+   * in angle rather than walking the source's polyline, so this path is an approximation by
+   * construction and there is no exact behaviour to preserve — only a shape to follow. A
+   * hundred samples puts every vertex within 2.3e-4 mm of the fully converged curve.
+   */
+  samples = 100,
+): Outline {
+  const ring = outlineRing(shape, atQuarter, atZero, 128, samples);
+  const cache = new Map<number, number>();
+  return {
+    radiusAt(theta: number) {
+      const key = Math.round(theta * 1e6);
+      const hit = cache.get(key);
+      if (hit !== undefined) return hit;
+      const r = radiusAtBearing(ring, theta);
+      cache.set(key, r);
+      return r;
+    },
+  };
 }
 
 /** A piece's placement on the rim: where it sits and which way it faces. */
@@ -188,9 +187,7 @@ export type RimFrame = { x: number; z: number; rotY: number };
  */
 export function rimFrame(
   azimuth: number,
-  atZero: number,
-  atQuarter: number,
-  exponent = 2,
+  outline: Outline,
   /**
    * Which of the part's own axes points radially outward. Basket pieces are authored +x
    * radial; halo pieces are +z, which is why the configurator places those with a plain
@@ -199,7 +196,7 @@ export function rimFrame(
   radialAxis: "x" | "z" = "x",
 ): RimFrame {
   const point = (t: number) => {
-    const r = outlineRadius(t, atZero, atQuarter, exponent);
+    const r = outline.radiusAt(t);
     return { x: -Math.sin(t) * r, z: -Math.cos(t) * r };
   };
 
@@ -227,12 +224,7 @@ export function rimFrame(
 }
 
 /** Cumulative arc length of the outline, sampled densely enough to walk by distance. */
-function outlineSamples(
-  atZero: number,
-  atQuarter: number,
-  exponent: number,
-  count = 1440,
-) {
+function outlineSamples(outline: Outline, count = 1440) {
   const angles: number[] = [];
   const arc: number[] = [];
   let total = 0;
@@ -240,7 +232,7 @@ function outlineSamples(
 
   for (let i = 0; i <= count; i++) {
     const t = (i / count) * Math.PI * 2;
-    const r = outlineRadius(t, atZero, atQuarter, exponent);
+    const r = outline.radiusAt(t);
     const p = { x: -Math.sin(t) * r, z: -Math.cos(t) * r };
     if (i > 0) total += Math.hypot(p.x - prev.x, p.z - prev.z);
     angles.push(t);
@@ -284,12 +276,8 @@ export const RIM_PITCH = { block015: 0.9559, block023: 1.108, plain: 0.4871 };
 export const RIM_THIN_THRESHOLD = 0.925;
 
 /** Total length once round an outline. */
-export function outlinePerimeter(
-  atZero: number,
-  atQuarter: number,
-  exponent = 2,
-): number {
-  return outlineSamples(atZero, atQuarter, exponent).total;
+export function outlinePerimeter(outline: Outline): number {
+  return outlineSamples(outline).total;
 }
 
 /**
@@ -298,18 +286,14 @@ export function outlinePerimeter(
  */
 export function ringFrames(
   count: number,
-  atZero: number,
-  atQuarter: number,
-  exponent = 2,
+  outline: Outline,
   radialAxis: "x" | "z" = "x",
 ): RimFrame[] {
-  const samples = outlineSamples(atZero, atQuarter, exponent);
+  const samples = outlineSamples(outline);
   return Array.from({ length: count }, (_, i) =>
     rimFrame(
       azimuthAtArc(samples, (samples.total * i) / count),
-      atZero,
-      atQuarter,
-      exponent,
+      outline,
       radialAxis,
     ),
   );
@@ -333,16 +317,14 @@ export type RimPiece = RimFrame & {
  */
 export function rimLayout(
   azimuths: number[],
-  atZero: number,
-  atQuarter: number,
-  exponent: number,
+  outline: Outline,
   scale = 1,
   /** A plain basket is all `Plain` pieces — they carry no stone seats, so the rail is smooth. */
   smooth = true,
 ): RimPiece[] {
-  if (azimuths.length === 0 || atZero <= 0 || atQuarter <= 0) return [];
+  if (azimuths.length === 0) return [];
 
-  const samples = outlineSamples(atZero, atQuarter, exponent);
+  const samples = outlineSamples(outline);
   const { angles, arc, total } = samples;
 
   /** Distance along the outline at an azimuth. */
@@ -387,7 +369,7 @@ export function rimLayout(
       // equal angles would bunch the pieces up at the corners.
       const azimuth = azimuthAtArc(samples, startArc + (span * (n + 0.5)) / count);
       out.push({
-        ...rimFrame(azimuth, atZero, atQuarter, exponent),
+        ...rimFrame(azimuth, outline),
         kind: smooth ? "plain" : "block",
         thickness,
         // Handed pieces are mirrored halves, so each run turns over at its midpoint.

@@ -424,6 +424,77 @@ export function roundedRectRing(
 }
 
 /**
+ * The closed outline of any stone, at the given semi-axes.
+ *
+ * One dispatcher for all nine, so the halo's rail, the bezel's collar and the basket's rim all
+ * follow the same curve. `count` is the point budget; it must divide by four for the squared
+ * outlines and by two for the blended ones, and 128 satisfies both.
+ */
+export function outlineRing(
+  shape: string,
+  semiX: number,
+  semiZ: number,
+  count = 128,
+  samples = ARC_SAMPLES,
+): PlanePoint[] {
+  switch (shape) {
+    case "Round":
+      return circleRing(count, semiX);
+    case "Princess":
+      // The same fixed 0.1mm corner the collar rounds its own outline with.
+      return roundedRectRing(count, semiX, semiZ, 0.1);
+    case "Asscher":
+    case "Emerald":
+    case "Radiant": {
+      const factor =
+        shape === "Emerald" ? 0.2026 : shape === "Radiant" ? 0.15308 : 0.15018;
+      return cutCornerRing(count, semiX, semiZ, factor * 2 * semiX);
+    }
+    case "Cushion":
+      return cushionRing(count, semiX, semiZ, 0.3, samples);
+    case "Marquise":
+      return marquiseRing(count, semiX, semiZ, 0, 0.55, samples);
+    case "Pear":
+      return pearRing(count, semiX, semiZ, 0, 0.55, samples);
+    default:
+      return ellipseRing(count, semiX, semiZ);
+  }
+}
+
+/**
+ * Distance from the origin out to the outline, along the bearing an azimuth points in.
+ *
+ * The rim code works in polar terms — "how far out is the outline at this prong's angle" — but
+ * a real outline is a polyline, and a pear's is not even centred on the origin. So the radius is
+ * ray-cast rather than evaluated: shoot from the origin along `(−sin θ, −cos θ)`, which is the
+ * direction a prong at that azimuth leans, and take the first crossing.
+ */
+export function radiusAtBearing(ring: PlanePoint[], theta: number): number {
+  const dx = -Math.sin(theta);
+  const dz = -Math.cos(theta);
+  let best = Infinity;
+
+  for (let i = 0; i < ring.length; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % ring.length];
+    const ex = q.x - p.x;
+    const ez = q.z - p.z;
+
+    const den = dz * ex - dx * ez;
+    if (Math.abs(den) < 1e-12) continue;
+
+    const u = (dx * p.z - dz * p.x) / den;
+    if (u < 0 || u > 1) continue;
+
+    const t =
+      Math.abs(dx) > Math.abs(dz) ? (p.x + u * ex) / dx : (p.z + u * ez) / dz;
+    if (t > 0 && t < best) best = t;
+  }
+
+  return Number.isFinite(best) ? best : 0;
+}
+
+/**
  * An Asscher, Emerald or Radiant: a rectangle whose four runs stop `cut` short of each corner.
  *
  * There are no corner points at all — the chamfer is the straight line the stitching draws

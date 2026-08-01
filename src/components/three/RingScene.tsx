@@ -36,9 +36,8 @@ import {
   basketHeight,
   basketMeasurements,
   haloHeight,
-  outlineExponent,
+  makeOutline,
   outlinePerimeter,
-  outlineRadius,
   rimLayout,
   ringFrames,
   type BasketMeasurements,
@@ -331,6 +330,20 @@ function useMillimetreGeometries(
    */
   widthMm?: number,
   /**
+   * Stretch each axis onto its own target instead of scaling all three by the width's factor.
+   *
+   * Seven of the nine stone models are authored at their true proportions, so a single factor
+   * lands every axis correctly. `CushionDiamond.glb` and `RadiantDiamond.glb` are not — both are
+   * **square** in plan (5.59² and 5.40²) where the API declares them oblong (5.329 × 6.4 and
+   * 5.06 × 6.4). Scaling those uniformly by width renders a square stone, and the prongs, halo
+   * and bezel — all built from the declared numbers — then wrap an outline about a millimetre
+   * longer than the stone inside it.
+   *
+   * Passing the declared dimensions here stretches each axis onto the size the rest of the head
+   * has already assumed. For the seven well-authored models it is a no-op.
+   */
+  sizeMm?: { width: number; length: number; depth: number },
+  /**
    * Drop the node hierarchy's translation, keeping only its rotation and scale.
    *
    * The configurator reads a centre stone as `scene.children[0].geometry` — the raw buffer,
@@ -348,8 +361,14 @@ function useMillimetreGeometries(
   const geometries = useMemo(() => {
     const box = meshBounds(meshes);
     const size = box.getSize(new THREE.Vector3());
-    const toMm = widthMm && size.x > 0 ? widthMm / size.x : 1;
-    const scaleToMm = new THREE.Matrix4().makeScale(toMm, toMm, toMm);
+    const uniform = widthMm && size.x > 0 ? widthMm / size.x : 1;
+    const scaleToMm = sizeMm
+      ? new THREE.Matrix4().makeScale(
+          size.x > 0 ? sizeMm.width / size.x : 1,
+          size.y > 0 ? sizeMm.depth / size.y : 1,
+          size.z > 0 ? sizeMm.length / size.z : 1,
+        )
+      : new THREE.Matrix4().makeScale(uniform, uniform, uniform);
 
     return meshes.map((m) => {
       const g = m.geometry.clone();
@@ -365,7 +384,7 @@ function useMillimetreGeometries(
       g.computeBoundingBox();
       return g;
     });
-  }, [meshes, widthMm, dropTranslation]);
+  }, [meshes, widthMm, sizeMm, dropTranslation]);
 
   useLayoutEffect(() => () => geometries.forEach((g) => g.dispose()), [geometries]);
   return geometries;
@@ -386,14 +405,34 @@ function CenterStone({
   const meshes = useGlbMeshes(model);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
 
-  // Baked at the stone's 1ct millimetre size, so this is stable across carat changes. The
-  // node translation is dropped to match how the source reads a centre stone — see
-  // useMillimetreGeometries.
-  const geometries = useMillimetreGeometries(meshes, stone.dimensions.width, true);
+  // Baked to the stone's declared 1ct millimetres on each axis, so this is stable across carat
+  // changes. Per-axis rather than a single width factor because two of the models are not
+  // authored at their true proportions, and the node translation is dropped to match how the
+  // source reads a centre stone — see useMillimetreGeometries for both.
+  const geometries = useMillimetreGeometries(
+    meshes,
+    undefined,
+    stone.dimensions,
+    true,
+  );
 
-  // All that's left for the model matrix: how much bigger this carat is than 1ct.
-  const caratScale =
-    stoneDimensionsAtCarat(stone, carat).width / stone.dimensions.width;
+  /**
+   * How much bigger this carat is than 1ct — again per axis.
+   *
+   * A stone does not grow uniformly: every shape carries a different exponent for length, width
+   * and depth (a round is 0.3407 across and 0.3291 deep), so one factor cannot be right for all
+   * three. Taken as a ratio of the dimensions the rest of the head is solved from, which keeps
+   * the stone exactly the size the prongs, halo and bezel were built to hold.
+   */
+  const dims = stoneDimensionsAtCarat(stone, carat);
+  const scale = useMemo<[number, number, number]>(
+    () => [
+      dims.width / stone.dimensions.width,
+      dims.depth / stone.dimensions.depth,
+      dims.length / stone.dimensions.length,
+    ],
+    [dims, stone.dimensions],
+  );
 
   const lift = useMemo(() => {
     const box = new THREE.Box3();
@@ -402,7 +441,7 @@ function CenterStone({
   }, [geometries]);
 
   return (
-    <group scale={caratScale} position={[0, baseY + lift * caratScale, 0]}>
+    <group scale={scale} position={[0, baseY + lift * scale[1], 0]}>
       {geometries.map((g, i) => (
         <mesh key={`${model}-${i}`} geometry={g}>
           <MeshRefractionMaterial
@@ -859,7 +898,6 @@ function Basket({
   // what makes the rail read as one smooth ribbon; the `Block` pieces have melee sockets cut
   // into them, so using those for a plain basket leaves the rail pocked with empty seats.
   const smooth = !showStones;
-  const exponent = outlineExponent(stone.name);
 
   const measurements = useMemo(
     () =>
@@ -873,19 +911,21 @@ function Basket({
     [stone.name, dims.width, dims.length, prongWidth, hidden],
   );
 
-  const rail = useBasketRail(measurements, exponent, measurements.height);
+  const rail = useBasketRail(measurements, stone.name, measurements.height);
 
   const pieces = useMemo(
     () =>
       rimLayout(
         azimuths,
-        measurements.topOuterLength,
-        measurements.topOuterWidth,
-        exponent,
+        makeOutline(
+          stone.name,
+          measurements.topOuterLength,
+          measurements.topOuterWidth,
+        ),
         prongWidth,
         false,
       ),
-    [azimuths, measurements, exponent, prongWidth],
+    [azimuths, measurements, stone.name, prongWidth],
   );
 
   const y = basketHeight(stone.name, stoneY, dims.pavHeight, clearance);
@@ -957,7 +997,7 @@ function Basket({
  */
 function useBasketRail(
   m: BasketMeasurements,
-  exponent: number,
+  shape: string,
   height: number,
 ) {
   const geometry = useMemo(() => {
@@ -968,20 +1008,26 @@ function useBasketRail(
     const position: number[] = [];
     const index: number[] = [];
 
+    // The rail's four edges each follow the stone's own outline at their own size.
+    const edges = [
+      makeOutline(shape, m.topOuterLength, m.topOuterWidth),
+      makeOutline(shape, m.topInnerLength, m.topInnerWidth),
+      makeOutline(shape, m.bottomInnerLength, m.bottomInnerWidth),
+      makeOutline(shape, m.bottomOuterLength, m.bottomOuterWidth),
+    ];
+
     for (let i = 0; i <= SEGMENTS; i++) {
       const t = (i / SEGMENTS) * Math.PI * 2;
       const dx = -Math.sin(t);
       const dz = -Math.cos(t);
-      const at = (long: number, wide: number) =>
-        outlineRadius(t, long, wide, exponent);
 
       // Cross-section, walked as a closed loop: over the top face, down the inner wall,
       // back along the bottom, up the outer wall.
       const section: [number, number][] = [
-        [at(m.topOuterLength, m.topOuterWidth), top],
-        [at(m.topInnerLength, m.topInnerWidth), top],
-        [at(m.bottomInnerLength, m.bottomInnerWidth), bottom],
-        [at(m.bottomOuterLength, m.bottomOuterWidth), bottom],
+        [edges[0].radiusAt(t), top],
+        [edges[1].radiusAt(t), top],
+        [edges[2].radiusAt(t), bottom],
+        [edges[3].radiusAt(t), bottom],
       ];
       section.forEach(([r, y]) => position.push(dx * r, y, dz * r));
     }
@@ -1001,7 +1047,7 @@ function useBasketRail(
     g.computeVertexNormals();
     g.computeBoundingBox();
     return g;
-  }, [m, exponent, height]);
+  }, [m, shape, height]);
 
   useLayoutEffect(() => () => geometry.dispose(), [geometry]);
   return geometry;
@@ -1310,12 +1356,9 @@ function LegacyHaloRing({
     const clearance = partBound(armParts, "z", "max") * prongWidth;
     const atZero = dims.length / 2 + clearance + radial / 2;
     const atQuarter = dims.width / 2 + clearance + radial / 2;
-    const exponent = outlineExponent(stone.name);
-    const count = Math.max(
-      8,
-      Math.round(outlinePerimeter(atZero, atQuarter, exponent) / pitch),
-    );
-    return ringFrames(count, atZero, atQuarter, exponent, "x");
+    const outline = makeOutline(stone.name, atZero, atQuarter);
+    const count = Math.max(8, Math.round(outlinePerimeter(outline) / pitch));
+    return ringFrames(count, outline, "x");
   }, [parts, armParts, prongWidth, dims.length, dims.width, stone.name]);
 
   return (
