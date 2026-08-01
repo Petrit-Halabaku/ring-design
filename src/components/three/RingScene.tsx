@@ -33,6 +33,12 @@ import {
 import { rimThickness } from "@/lib/settings/haloLayout/types";
 import { bezelGeometry, bezelHeight } from "@/lib/settings/bezelGeometry";
 import {
+  bandGeometry,
+  bandOuterRadius,
+  type BandFit,
+  type BandStyle,
+} from "@/lib/settings/bandGeometry";
+import {
   basketHeight,
   basketMeasurements,
   haloHeight,
@@ -146,9 +152,6 @@ const STONE_DESATURATION = 0.8;
  */
 const STONE_FILL = 0.16;
 
-/** US ring size → inner diameter in millimetres. */
-const innerDiameterMm = (usSize: number) => 11.63 + 0.8128 * usSize;
-
 export type SceneProps = {
   stone: Stone;
   /** Local path to the stone's GLB (mirrors the API's `glbUrl`). */
@@ -173,6 +176,10 @@ export type SceneProps = {
   basketHalo?: string;
   /** A cathedral band lifts a classic basket; see prongGeometry.headOffsets. */
   cathedral?: boolean;
+  /** Outer profile of the band. */
+  bandStyle?: BandStyle;
+  /** Inner profile of the band — the face against the finger. */
+  bandFit?: BandFit;
 };
 
 /**
@@ -631,7 +638,6 @@ function useHeadLayout(
   carat: number,
   angles: number[],
   countType: string,
-  bandWidthMm: number,
   pave: boolean,
   basketHalo: string,
   cathedral: boolean,
@@ -653,7 +659,10 @@ function useHeadLayout(
     // The vendor measures from the ring centre: inner radius + band thickness − seat. This
     // shank is a torus centred at −meanRadius, so that same face is just the tube radius.
     // The seat term sinks the prong's base into the metal rather than perching it on top.
-    const mountY = bandWidthMm / 2 - PRONG_SEAT * prongWidth;
+    // The band's outer face is brought to y = 0 by Shank, so the prong's seat is simply sunk
+    // below it. This used to read `bandWidthMm / 2`, which assumed the band got radially
+    // thicker as it was widened — it doesn't; its thickness is a fixed 1.8mm.
+    const mountY = -PRONG_SEAT * prongWidth;
 
     const aSides = prongASides(
       stone.name,
@@ -723,7 +732,6 @@ function useHeadLayout(
     carat,
     angles,
     countType,
-    bandWidthMm,
     pave,
     basketHalo,
     cathedral,
@@ -1378,19 +1386,30 @@ function Shank({
   color,
   ringSize,
   bandWidthMm,
+  bandStyle,
+  bandFit,
 }: {
   color: string;
   ringSize: number;
   bandWidthMm: number;
+  bandStyle: BandStyle;
+  bandFit: BandFit;
 }) {
   const metal = useMetalMaterial(color);
-  const tube = bandWidthMm / 2;
-  const meanRadius = innerDiameterMm(ringSize) / 2 + tube;
 
+  const geometry = useMemo(
+    () => bandGeometry(bandStyle, bandFit, bandWidthMm, ringSize),
+    [bandStyle, bandFit, bandWidthMm, ringSize],
+  );
+  useLayoutEffect(() => () => geometry.dispose(), [geometry]);
+
+  // Dropped so the band's outer face — the head's seat — lands on y = 0.
   return (
-    <mesh material={metal} position={[0, -meanRadius, 0]}>
-      <torusGeometry args={[meanRadius, tube, 32, 160]} />
-    </mesh>
+    <mesh
+      material={metal}
+      geometry={geometry}
+      position={[0, -bandOuterRadius(ringSize), 0]}
+    />
   );
 }
 
@@ -1409,13 +1428,14 @@ export default function RingScene({
   prongPave = false,
   basketHalo = "None",
   cathedral = false,
+  bandStyle = "Round",
+  bandFit = "Comfort Fit",
 }: SceneProps) {
   const head = useHeadLayout(
     stone,
     carat,
     prongAngles,
     prongCountType,
-    bandWidthMm,
     prongPave,
     basketHalo,
     cathedral,
@@ -1436,7 +1456,13 @@ export default function RingScene({
 
       <Suspense fallback={null}>
         <group position={[0, 5, 0]}>
-          <Shank color={metalColor} ringSize={ringSize} bandWidthMm={bandWidthMm} />
+          <Shank
+            color={metalColor}
+            ringSize={ringSize}
+            bandWidthMm={bandWidthMm}
+            bandStyle={bandStyle}
+            bandFit={bandFit}
+          />
           <CenterStone
             stone={stone}
             model={stoneModel}

@@ -24,6 +24,7 @@ import {
   DEFAULT_BASKET_HALO,
   type BasketHaloId,
 } from "@/lib/settings/basketHalo";
+import { BAND_FITS, BAND_STYLES } from "@/lib/settings/bandGeometry";
 import type { RingSettings } from "@/lib/settings/types";
 
 /**
@@ -106,8 +107,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   const [settings, setSettings] = useState<RingSettings>(SNAPSHOT);
   const [open, setOpen] = useState<string | null>(null);
   const [selections, setSelections] = useState<Record<string, number>>({});
-  const [bandWidth, setBandWidth] = useState(1.8);
-  const [ringSize, setRingSize] = useState(6.5);
+  const [bandWidth, setBandWidth] = useState(1.7);
+  const [ringSize, setRingSize] = useState(6);
   const [engraving, setEngraving] = useState("");
   const [carat, setCarat] = useState(initialCarat ?? 1);
   const [prongCount, setProngCount] = useState<ProngCount>(DEFAULT_PRONG_COUNT);
@@ -322,6 +323,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
               prongPave={prongPave}
               basketHalo={basketHalo}
               cathedral={(selections["band-1"] ?? 0) === 1}
+              bandStyle={BAND_STYLES[selections["band-0"] ?? 0] ?? "Round"}
+              bandFit={BAND_FITS[selections["band-3"] ?? 0] ?? "Comfort Fit"}
             />
           </div>
 
@@ -445,7 +448,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                                 Ring Size (US)
                               </span>
                               <span className="text-[12px] text-neutral-500">
-                                {ringSize.toFixed(1)}
+                                {ringSize.toFixed(2)}
                               </span>
                             </div>
                             <div className="mt-0.5 text-[11px] leading-snug text-neutral-500">
@@ -455,7 +458,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                               type="range"
                               min={3}
                               max={13}
-                              step={0.5}
+                              step={0.25}
                               value={ringSize}
                               onChange={(e) => setRingSize(+e.target.value)}
                               className="mt-2 w-full accent-neutral-900"
