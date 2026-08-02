@@ -372,6 +372,10 @@ export function cathedralGeometry(
       const b = step * ring + j;
       const c = next * ring + i;
       const d = next * ring + j;
+      // Wound opposite to the band's, because this loop is nested the other way round: here a
+      // row is one sweep step and a column is one profile point, where the band has it the
+      // other way about. Same winding on a transposed grid gives the opposite orientation, and
+      // an inward-facing arch reads as a hollow shell you can see straight through.
       index.push(a, c, b);
       index.push(b, c, d);
     }
@@ -422,8 +426,11 @@ export function bandGeometry(
       const b = row * segments + j;
       const c = next * segments + i;
       const d = next * segments + j;
-      index.push(a, c, b);
-      index.push(b, c, d);
+      // Wound so the faces point outward. The sweep places the head at angle zero with
+      // `(sin, cos)`, which is a reflection of the usual `(cos, sin)` and so flips handedness —
+      // wound the other way the band renders inside out, reading as a hollow shell.
+      index.push(a, b, c);
+      index.push(b, d, c);
     }
   }
 
