@@ -55,7 +55,6 @@ import {
   cathedralGeometry,
   cathedralPath,
   cathedralShoulders,
-  CATHEDRAL_INSET,
   BAND_THICKNESS,
   type CathedralShoulders,
   type BandFit,
@@ -1560,10 +1559,9 @@ function BandPaveRun({
         // The layout works in angles measured from the head; the arch is solved in the same
         // terms, so a bead on the rise lifts with the band instead of staying on the circle.
         const sweep = Math.PI / 2 - angle;
-        // Seated on the shoulder's outer face. The shoulder carries its full section all the
-        // way up, so that face is at a constant height above the path and the run simply rides
-        // it — the same seat on the rise as on the straight.
-        const seat = base + (radius - base) * CATHEDRAL_INSET;
+        // Seated on the shoulder's outer face. `radius` already *is* that face, so it needs no
+        // section depth of its own — the shoulder's arrival carries it.
+        const seat = radius;
         const here = cathedralPath(sweep, seat, base, cathedral);
 
         // Frame taken off the path rather than off the origin: on the rise the band's outward
@@ -1682,8 +1680,6 @@ function BandPave({
  * Each style seats at its own height, and aiming the shoulders at a basket while a halo or a
  * bezel is fitted leaves them either stopping short of the head or driving up through it.
  *
- * `rimHeight` is how far the anchor is sunk into the cage so the two meet solid rather than
- * merely touching, and is the selected cage's own rim.
  */
 function cathedralAnchor(
   style: string | null,
@@ -1694,25 +1690,24 @@ function cathedralAnchor(
   pavHeight: number,
   girdleThickness: number,
   carat: number,
-): { seatHeight: number; rimHeight: number } {
+): { seatHeight: number } {
   if (style === "Bezel") {
     return {
       seatHeight: bezelHeight(stoneY, pavHeight, girdleThickness, prongWidth),
-      rimHeight: 0.8419 * prongWidth,
     };
   }
   if (style === "Classic") {
-    const ratio = haloThicknessRatio(carat);
     return {
-      seatHeight: haloHeight(stoneY, pavHeight, girdleThickness, ratio),
-      rimHeight: 2 * rimThickness(ratio),
+      seatHeight: haloHeight(
+        stoneY,
+        pavHeight,
+        girdleThickness,
+        haloThicknessRatio(carat),
+      ),
     };
   }
   // Basket, Hidden Halo and a bare head all seat on the basket rail.
-  return {
-    seatHeight: basketHeight(stoneName, stoneY, pavHeight, clearance),
-    rimHeight: 0.8419 * prongWidth,
-  };
+  return { seatHeight: basketHeight(stoneName, stoneY, pavHeight, clearance) };
 }
 
 function Shank({
@@ -1742,6 +1737,8 @@ function Shank({
 }) {
   const metal = useMetalMaterial(color);
 
+  // The shank *is* the cathedral: it sweeps up into the shoulders rather than staying a circle
+  // with an arch laid over it.
   const geometry = useMemo(
     () =>
       bandGeometry(
@@ -1752,13 +1749,16 @@ function Shank({
         shelf,
         thickness,
         gaps,
+        256,
+        cathedral,
       ),
-    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, gaps],
+    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, gaps, cathedral],
   );
   useLayoutEffect(() => () => geometry.dispose(), [geometry]);
 
-  // The shoulders are added to the circle rather than swept into it.
-  const arches = useMemo(
+  // Which leaves the circle to be closed under the head by a plain ring, a shade smaller so it
+  // stays inside the shank.
+  const closing = useMemo(
     () =>
       cathedral
         ? cathedralGeometry(
@@ -1766,21 +1766,20 @@ function Shank({
             bandFit,
             bandWidthMm,
             ringSize,
-            cathedral,
-            shelf,
             thickness,
+            shelf,
             gaps,
           )
         : null,
-    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, gaps],
+    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, thickness, shelf, gaps],
   );
-  useLayoutEffect(() => () => arches?.dispose(), [arches]);
+  useLayoutEffect(() => () => closing?.dispose(), [closing]);
 
   // Dropped so the band's outer face — the head's seat — lands on y = 0.
   return (
     <group position={[0, -bandOuterRadius(ringSize, thickness), 0]}>
       <mesh material={metal} geometry={geometry} />
-      {arches && <mesh material={metal} geometry={arches} />}
+      {closing && <mesh material={metal} geometry={closing} />}
     </group>
   );
 }
