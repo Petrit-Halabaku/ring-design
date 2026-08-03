@@ -1761,17 +1761,9 @@ function Shank({
   const closing = useMemo(
     () =>
       cathedral
-        ? cathedralGeometry(
-            bandStyle,
-            bandFit,
-            bandWidthMm,
-            ringSize,
-            thickness,
-            shelf,
-            gaps,
-          )
+        ? cathedralGeometry(bandStyle, bandFit, bandWidthMm, ringSize, thickness)
         : null,
-    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, thickness, shelf, gaps],
+    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, thickness],
   );
   useLayoutEffect(() => () => closing?.dispose(), [closing]);
 

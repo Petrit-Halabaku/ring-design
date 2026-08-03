@@ -338,26 +338,27 @@ export function cathedralGeometry(
   width: number,
   ringSize: number,
   thickness = BAND_THICKNESS,
-  shelf = 0,
-  /**
-   * The pavé run's arcs, cut back here too.
-   *
-   * This ring is part of the shank, so where the shank is cut back to the seat for the pavé to
-   * stand on, this has to come with it — left at full height it rides above the seat and eats
-   * three quarters of the clearance the melee are set with. Its seat is scaled down alongside
-   * its section so the two flats never land on each other and z-fight.
-   */
-  flats: { from: number; to: number }[] = [],
   segments = 256,
 ): THREE.BufferGeometry {
+  /**
+   * Uniform the whole way round — no pavé seat cut into it.
+   *
+   * The melee stand on the *shank*; this ring only closes the circle. Cutting it back over the
+   * run leaves the few degrees right at the head — which the run never reaches — standing a
+   * seat's depth proud of its neighbours, with a hard step at each end. That reads as a squared
+   * tab slung under the basket, and it is the one part of the band a cathedral leaves in plain
+   * view between its shoulders. Left uniform it looks the same with pavé as without, which is
+   * the point, and the shank's full section covers it up to the head while the run's own pieces
+   * cover it beyond.
+   */
   return bandGeometry(
     style,
     fit,
     width * CLOSING_WIDTH,
     ringSize,
-    shelf * CLOSING_DEPTH,
+    0,
     INNER_DEPTH + (thickness - INNER_DEPTH) * CLOSING_DEPTH,
-    flats,
+    [],
     segments,
   );
 }

@@ -149,37 +149,26 @@ export function bandPaveLayout(
     sweeps.push(i * (step / 2) + nudge);
   }
 
-  // One gap per run. Padded by half a pitch — comfortably inside the pieces' own overlap, so
-  // the band's cut ends always finish underneath a piece rather than short of one.
+  // One gap per run, padded by half a pitch at both ends — and no more than that at the head.
   //
-  // The head-side end takes a full pitch instead. A cathedral's shoulder carries its whole
-  // section, and where that section starts it stands about a band thickness proud of the seat;
-  // begin it half a pitch from the last stone and it rears up across that stone's trailing
-  // edge. A full pitch puts the rise clear of the run, which is the only place it can go — the
-  // shoulder has to reach full section somewhere before it meets the head.
+  // The pieces are 2.62mm long on a 1.62mm pitch, so each reaches about three quarters of a pitch
+  // past its own stone; a cut stopping half a pitch out therefore still finishes underneath one.
+  // Pad the head end further and the cut runs on past where any piece reaches, which leaves the
+  // ring that closes the circle as the outermost metal there — a nub standing on the bare seat
+  // between the last stone and the head.
   const gaps: BandPaveGap[] = [];
   if (sweeps.length) {
     const pad = step / 2;
-    const headPad = step;
-    // Sweep is measured from the head, so the end nearer 0 (or nearer 2π on the far run) is the
-    // one facing it.
-    const push = (lo: number, hi: number) => {
-      const loFacesHead = Math.min(lo, 2 * Math.PI - hi) === lo;
-      gaps.push({
-        from: lo - (loFacesHead ? headPad : pad),
-        to: hi + (loFacesHead ? pad : headPad),
-      });
-    };
     let from = sweeps[0];
     let prev = sweeps[0];
     for (let i = 1; i < sweeps.length; i++) {
       if (sweeps[i] - prev > step * 1.5) {
-        push(from, prev);
+        gaps.push({ from: from - pad, to: prev + pad });
         from = sweeps[i];
       }
       prev = sweeps[i];
     }
-    push(from, prev);
+    gaps.push({ from: from - pad, to: prev + pad });
   }
 
   return {
