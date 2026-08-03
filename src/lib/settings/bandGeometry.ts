@@ -71,8 +71,10 @@ export function bandOuterRadius(
  * A cathedral's rise, in the band's own frame.
  *
  * Rather than sitting on the band, the shoulders *are* the band: over the last stretch before
- * the head the sweep blends off its circle and onto the head's anchor, tapering to `neck` as it
- * arrives. Both shoulders share one description — the second is the first mirrored.
+ * the head the sweep blends off its circle and onto the head's anchor. The section does not
+ * narrow on the way — the shoulder arrives at the head at the band's full width and thickness,
+ * so the head it carries is never pinched down to fit a tapering strut. Both shoulders share
+ * one description; the second is the first mirrored.
  */
 export type CathedralShoulders = {
   /** Radial distance from the ring's centre out to the anchor at the head. */
@@ -81,8 +83,6 @@ export type CathedralShoulders = {
   lateral: number;
   /** Where the shoulder leaves the circle, measured from the top. */
   angle: number;
-  /** Width and thickness the band pinches to where it meets the head. */
-  neck: number;
 };
 
 /**
@@ -98,14 +98,12 @@ export function cathedralShoulders({
   seatHeight,
   rimHeight,
   stoneWidth,
-  prongWidth,
   innerRadius,
 }: {
   outerRadius: number;
   seatHeight: number;
   rimHeight: number;
   stoneWidth: number;
-  prongWidth: number;
   innerRadius: number;
 }): CathedralShoulders {
   const height = outerRadius + seatHeight - rimHeight / 2;
@@ -119,7 +117,6 @@ export function cathedralShoulders({
     height,
     lateral,
     angle: Math.min(bearing + lead, (65 * Math.PI) / 180),
-    neck: 0.85 * prongWidth,
   };
 }
 
@@ -142,19 +139,6 @@ export function cathedralBlend(
 }
 
 /**
- * How far the shoulder has pinched at a given sweep angle: 1 on the open band, easing down
- * toward the head. Anything set into the shoulder narrows with it.
- */
-export function cathedralTaper(
-  sweep: number,
-  shoulders: CathedralShoulders | null,
-): number {
-  if (!shoulders) return 1;
-  const offset = Math.abs(((sweep + Math.PI) % (2 * Math.PI)) - Math.PI);
-  return Math.sin(Math.min(1, offset / shoulders.angle) * (Math.PI / 2));
-}
-
-/**
  * The arch is held a hair under the band's own section.
  *
  * The arch is a *closed* ring, not two stubs: away from the shoulders it simply follows the
@@ -164,35 +148,6 @@ export function cathedralTaper(
  * lifts it clear, and the smoothstep makes that emergence tangent.
  */
 export const CATHEDRAL_INSET = 0.997;
-
-/**
- * How much of its radial section the shoulder still carries at a given sweep.
- *
- * This is *not* `cathedralTaper`. The pinch runs to zero at the head; the section does not — it
- * keeps a neck's worth of metal, because the shoulder has to arrive at the head as a solid
- * strut rather than a knife edge. Anything seated on the shoulder's outer face has to be placed
- * with this, not with the pinch, or it sinks under the metal as the shoulder climbs.
- */
-export function cathedralSectionRadial(
-  sweep: number,
-  shoulders: CathedralShoulders | null,
-  thickness = BAND_THICKNESS,
-): number {
-  if (!shoulders) return 1;
-  const ease = cathedralTaper(sweep, shoulders);
-  return (shoulders.neck + (thickness - shoulders.neck) * ease) / thickness;
-}
-
-/** The same, across the band's width. */
-export function cathedralSectionAxial(
-  sweep: number,
-  shoulders: CathedralShoulders | null,
-  width: number,
-): number {
-  if (!shoulders) return 1;
-  const ease = cathedralTaper(sweep, shoulders);
-  return (shoulders.neck + (width - shoulders.neck) * ease) / width;
-}
 
 export function cathedralPath(
   sweep: number,
@@ -406,17 +361,15 @@ export function cathedralGeometry(
   const positions: number[] = [];
   for (let step = 0; step < segments; step++) {
     const sweep = (step / segments) * 2 * Math.PI;
-    // Section taper measured off the angle, so both shoulders narrow alike and the circular run
-    // between them stays at full section. Shared with whatever is seated on the shoulder — the
-    // pavé solves its seat from these same two calls.
-    const taperRadial = cathedralSectionRadial(sweep, shoulders, thickness);
-    const taperAxial = cathedralSectionAxial(sweep, shoulders, width);
-
+    // Full section the whole way up. The shoulder used to narrow to a neck as it climbed, which
+    // squeezed the head between the two arms and left a smaller stone than the setting was
+    // solved for; carrying the band's own width and thickness to the anchor keeps the head at
+    // the size the rest of the solve assumes.
     const section = flattened(sweep) ? seated : profile;
     for (const p of section) {
-      const r = base + p.radial * taperRadial * CATHEDRAL_INSET;
+      const r = base + p.radial * CATHEDRAL_INSET;
       const { up, side } = cathedralPath(sweep, r, base, shoulders);
-      positions.push(side, up, p.axial * taperAxial * CATHEDRAL_INSET);
+      positions.push(side, up, p.axial * CATHEDRAL_INSET);
     }
   }
 

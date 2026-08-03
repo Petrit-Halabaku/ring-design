@@ -299,7 +299,16 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
     else if (panelId === "head" && groupIdx === 3) setProngPave(choiceIdx === 1);
     else if (panelId === "head" && groupIdx === 4)
       setProngMetalIdx(choiceIdx === 0 ? null : choiceIdx - 1);
-    else setSelections((s) => ({ ...s, [key(panelId, groupIdx)]: choiceIdx }));
+    else {
+      // Switching a cathedral on with a bare head fits a basket for it to land on. Ported from
+      // the source's own handler, which reads `"None" !== e && "None" === basketHalo` before
+      // setting `basketHalo` to Basket — so it only fills an empty choice. A halo, bezel or
+      // hidden halo already gives the shoulders something to meet and is left alone.
+      if (panelId === "band" && groupIdx === 1 && choiceIdx !== 0) {
+        setBasketHalo((current) => (current === "None" ? "Basket" : current));
+      }
+      setSelections((s) => ({ ...s, [key(panelId, groupIdx)]: choiceIdx }));
+    }
   }
 
   function activeChoice(panel: Panel, groupIdx: number, group: Group) {

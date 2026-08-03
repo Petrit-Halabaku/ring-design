@@ -55,7 +55,6 @@ import {
   cathedralGeometry,
   cathedralPath,
   cathedralShoulders,
-  cathedralSectionRadial,
   CATHEDRAL_INSET,
   BAND_THICKNESS,
   type CathedralShoulders,
@@ -1536,7 +1535,6 @@ function BandPaveRun({
   metal,
   envMap,
   base,
-  thickness,
   cathedral,
 }: {
   model: string;
@@ -1546,7 +1544,6 @@ function BandPaveRun({
   metal: THREE.Material;
   envMap: THREE.Texture;
   base: number;
-  thickness: number;
   cathedral: CathedralShoulders | null;
 }) {
   const parts = useBakedParts(model);
@@ -1563,13 +1560,10 @@ function BandPaveRun({
         // The layout works in angles measured from the head; the arch is solved in the same
         // terms, so a bead on the rise lifts with the band instead of staying on the circle.
         const sweep = Math.PI / 2 - angle;
-        // Seated on the shoulder's outer face, so the seat is solved with the arch's own
-        // section taper and inset — literally the same two calls the arch builds itself from.
-        // Solving it off `cathedralTaper` instead sinks the run: the pinch runs to zero at the
-        // head while the section keeps a neck's worth of metal, so the face climbs away from a
-        // pinch-solved seat and closes over the stones right where the shoulder is tallest.
-        const section = cathedralSectionRadial(sweep, cathedral, thickness);
-        const seat = base + (radius - base) * section * CATHEDRAL_INSET;
+        // Seated on the shoulder's outer face. The shoulder carries its full section all the
+        // way up, so that face is at a constant height above the path and the run simply rides
+        // it — the same seat on the rise as on the straight.
+        const seat = base + (radius - base) * CATHEDRAL_INSET;
         const here = cathedralPath(sweep, seat, base, cathedral);
 
         // Frame taken off the path rather than off the origin: on the rise the band's outward
@@ -1605,7 +1599,7 @@ function BandPaveRun({
         m.setPosition(here.side, here.up, 0);
         return m;
       }),
-    [placements, radius, scale, base, thickness, cathedral],
+    [placements, radius, scale, base, cathedral],
   );
 
   return (
@@ -1672,12 +1666,53 @@ function BandPave({
           metal={metal}
           envMap={envMap}
           base={bandInnerRadius(ringSize) + 0.2 * BAND_THICKNESS}
-          thickness={thickness}
           cathedral={cathedral}
         />
       ))}
     </group>
   );
+}
+
+/**
+ * Where a cathedral's shoulders have to land.
+ *
+ * The arch is a buttress — the source's own copy for the option says a cathedral "will also
+ * improve the durability of your custom ring by connecting the head and band at multiple
+ * points" — so it has to arrive on the underside of whatever the head is actually wearing.
+ * Each style seats at its own height, and aiming the shoulders at a basket while a halo or a
+ * bezel is fitted leaves them either stopping short of the head or driving up through it.
+ *
+ * `rimHeight` is how far the anchor is sunk into the cage so the two meet solid rather than
+ * merely touching, and is the selected cage's own rim.
+ */
+function cathedralAnchor(
+  style: string | null,
+  stoneName: string,
+  stoneY: number,
+  clearance: number,
+  prongWidth: number,
+  pavHeight: number,
+  girdleThickness: number,
+  carat: number,
+): { seatHeight: number; rimHeight: number } {
+  if (style === "Bezel") {
+    return {
+      seatHeight: bezelHeight(stoneY, pavHeight, girdleThickness, prongWidth),
+      rimHeight: 0.8419 * prongWidth,
+    };
+  }
+  if (style === "Classic") {
+    const ratio = haloThicknessRatio(carat);
+    return {
+      seatHeight: haloHeight(stoneY, pavHeight, girdleThickness, ratio),
+      rimHeight: 2 * rimThickness(ratio),
+    };
+  }
+  // Basket, Hidden Halo and a bare head all seat on the basket rail.
+  return {
+    seatHeight: basketHeight(stoneName, stoneY, pavHeight, clearance),
+    rimHeight: 0.8419 * prongWidth,
+  };
 }
 
 function Shank({
@@ -1813,15 +1848,17 @@ export default function RingScene({
       cathedral
         ? cathedralShoulders({
             outerRadius: bandOuterRadius(ringSize, bandThickness),
-            seatHeight: basketHeight(
+            ...cathedralAnchor(
+              head.style,
               stone.name,
               head.stoneY,
-              dims.pavHeight,
               head.clearance,
+              head.prongWidth,
+              dims.pavHeight,
+              dims.girdleThickness,
+              carat,
             ),
-            rimHeight: 0.8419 * head.prongWidth,
             stoneWidth: dims.width,
-            prongWidth: head.prongWidth,
             innerRadius: bandInnerRadius(ringSize),
           })
         : null,
@@ -1833,8 +1870,11 @@ export default function RingScene({
       head.stoneY,
       head.clearance,
       head.prongWidth,
+      head.style,
       dims.pavHeight,
+      dims.girdleThickness,
       dims.width,
+      carat,
     ],
   );
 
