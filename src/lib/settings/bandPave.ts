@@ -41,8 +41,20 @@ export type BandPavePlacement = {
   angle: number;
 };
 
+/** An arc of the band the pavé pieces stand in for, in sweep radians measured from the head. */
+export type BandPaveGap = { from: number; to: number };
+
 export type BandPaveLayout = {
   placements: BandPavePlacement[];
+  /**
+   * Where the band must not be drawn.
+   *
+   * The authored pieces are full-width band segments — 1.70mm across, the band's own width —
+   * overlapping at the pitch, so along the run they *are* the band. Draw the band underneath as
+   * well and its crown arches over the stones, leaving only slivers showing either side of the
+   * ridge. The source cuts the shank away here for exactly that reason.
+   */
+  gaps: BandPaveGap[];
   /** Radius the beads ride at. */
   radius: number;
   /** Uniform scale applied to each authored piece. */
@@ -82,7 +94,14 @@ export function bandPaveLayout(
 
   const slots = Math.floor(paveCircumference / pitch);
   if (slots <= 0) {
-    return { placements: [], radius: seat, scale: width / 0.9, shelf, stoneCount: 0 };
+    return {
+      placements: [],
+      gaps: [],
+      radius: seat,
+      scale: width / 0.9,
+      shelf,
+      stoneCount: 0,
+    };
   }
   const step = (2 * Math.PI) / slots;
 
@@ -99,6 +118,7 @@ export function bandPaveLayout(
   // parity; an odd head span nudges the whole run over by half a slot to stay centred.
   const nudge = taken % 2 !== 0 ? step / 2 : 0;
   const placements: BandPavePlacement[] = [];
+  const sweeps: number[] = [];
 
   const runEnd = 2 * covered - (taken % 2);
   const wrapStart = 2 * (slots - covered);
@@ -126,10 +146,29 @@ export function bandPaveLayout(
     }
 
     placements.push({ part, angle: Math.PI / 2 - i * (step / 2) - nudge });
+    sweeps.push(i * (step / 2) + nudge);
+  }
+
+  // One gap per run. Padded by half a pitch — comfortably inside the pieces' own overlap, so
+  // the band's cut ends always finish underneath a piece rather than short of one.
+  const gaps: BandPaveGap[] = [];
+  if (sweeps.length) {
+    const pad = step / 2;
+    let from = sweeps[0];
+    let prev = sweeps[0];
+    for (let i = 1; i < sweeps.length; i++) {
+      if (sweeps[i] - prev > step * 1.5) {
+        gaps.push({ from: from - pad, to: prev + pad });
+        from = sweeps[i];
+      }
+      prev = sweeps[i];
+    }
+    gaps.push({ from: from - pad, to: prev + pad });
   }
 
   return {
     placements,
+    gaps,
     radius: seat + shelf - 0.007,
     scale: width / 0.9,
     shelf,

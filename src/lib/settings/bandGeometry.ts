@@ -141,6 +141,59 @@ export function cathedralBlend(
   return t * t * (3 - 2 * t);
 }
 
+/**
+ * How far the shoulder has pinched at a given sweep angle: 1 on the open band, easing down
+ * toward the head. Anything set into the shoulder narrows with it.
+ */
+export function cathedralTaper(
+  sweep: number,
+  shoulders: CathedralShoulders | null,
+): number {
+  if (!shoulders) return 1;
+  const offset = Math.abs(((sweep + Math.PI) % (2 * Math.PI)) - Math.PI);
+  return Math.sin(Math.min(1, offset / shoulders.angle) * (Math.PI / 2));
+}
+
+/**
+ * The arch is held a hair under the band's own section.
+ *
+ * The arch is a *closed* ring, not two stubs: away from the shoulders it simply follows the
+ * circle, tucked just inside the band where nothing can see it. That is what removes the join —
+ * a solid that stops has to stop somewhere, and wherever it stopped its end showed as a line
+ * across the shank. This one never stops, so the only place it meets air is where the blend
+ * lifts it clear, and the smoothstep makes that emergence tangent.
+ */
+export const CATHEDRAL_INSET = 0.997;
+
+/**
+ * How much of its radial section the shoulder still carries at a given sweep.
+ *
+ * This is *not* `cathedralTaper`. The pinch runs to zero at the head; the section does not — it
+ * keeps a neck's worth of metal, because the shoulder has to arrive at the head as a solid
+ * strut rather than a knife edge. Anything seated on the shoulder's outer face has to be placed
+ * with this, not with the pinch, or it sinks under the metal as the shoulder climbs.
+ */
+export function cathedralSectionRadial(
+  sweep: number,
+  shoulders: CathedralShoulders | null,
+  thickness = BAND_THICKNESS,
+): number {
+  if (!shoulders) return 1;
+  const ease = cathedralTaper(sweep, shoulders);
+  return (shoulders.neck + (thickness - shoulders.neck) * ease) / thickness;
+}
+
+/** The same, across the band's width. */
+export function cathedralSectionAxial(
+  sweep: number,
+  shoulders: CathedralShoulders | null,
+  width: number,
+): number {
+  if (!shoulders) return 1;
+  const ease = cathedralTaper(sweep, shoulders);
+  return (shoulders.neck + (width - shoulders.neck) * ease) / width;
+}
+
 export function cathedralPath(
   sweep: number,
   radius: number,
@@ -325,41 +378,45 @@ export function cathedralGeometry(
   shoulders: CathedralShoulders,
   shelf = 0,
   thickness = BAND_THICKNESS,
+  /**
+   * Arcs where the outer face is flattened to the shelf — the same pavé run the shank is cut
+   * back along. The arch *is* the band over the shoulders, so leaving its dome in here would
+   * arch it straight over the stones it is meant to carry.
+   */
+  flats: { from: number; to: number }[] = [],
   segments = 256,
 ): THREE.BufferGeometry {
   const profile = bandProfile(style, fit, width, shelf, thickness);
+  const seated = profile.map((p) => ({ ...p, radial: Math.min(p.radial, shelf) }));
   const base = bandInnerRadius(ringSize) + INNER_DEPTH;
   const ring = profile.length;
 
-  /**
-   * Held a hair under the band's own section.
-   *
-   * The arch is a *closed* ring, not two stubs: away from the shoulders it simply follows the
-   * circle, tucked just inside the band where nothing can see it. That is what removes the
-   * join — a solid that stops has to stop somewhere, and wherever it stopped its end showed as
-   * a line across the shank. This one never stops, so the only place it meets air is where the
-   * blend lifts it clear, and the smoothstep makes that emergence tangent.
-   */
-  const INSET = 0.997;
+  const wrap = (a: number) => {
+    const t = a % (2 * Math.PI);
+    return t < 0 ? t + 2 * Math.PI : t;
+  };
+  const flattened = (sweep: number) => {
+    const a = wrap(sweep);
+    return flats.some(({ from, to }) => {
+      const f = wrap(from), t = wrap(to);
+      return f <= t ? a >= f && a <= t : a >= f || a <= t;
+    });
+  };
 
   const positions: number[] = [];
   for (let step = 0; step < segments; step++) {
     const sweep = (step / segments) * 2 * Math.PI;
-    // Pinch measured off the angle, so both shoulders taper alike and the circular run between
-    // them stays at full section.
-    const offset = Math.abs(((sweep + Math.PI) % (2 * Math.PI)) - Math.PI);
-    const ease = Math.sin(
-      Math.min(1, offset / shoulders.angle) * (Math.PI / 2),
-    );
-    const taperRadial =
-      (shoulders.neck + (thickness - shoulders.neck) * ease) / thickness;
-    const taperAxial =
-      (shoulders.neck + (width - shoulders.neck) * ease) / width;
+    // Section taper measured off the angle, so both shoulders narrow alike and the circular run
+    // between them stays at full section. Shared with whatever is seated on the shoulder — the
+    // pavé solves its seat from these same two calls.
+    const taperRadial = cathedralSectionRadial(sweep, shoulders, thickness);
+    const taperAxial = cathedralSectionAxial(sweep, shoulders, width);
 
-    for (const p of profile) {
-      const r = base + p.radial * taperRadial * INSET;
+    const section = flattened(sweep) ? seated : profile;
+    for (const p of section) {
+      const r = base + p.radial * taperRadial * CATHEDRAL_INSET;
       const { up, side } = cathedralPath(sweep, r, base, shoulders);
-      positions.push(side, up, p.axial * taperAxial * INSET);
+      positions.push(side, up, p.axial * taperAxial * CATHEDRAL_INSET);
     }
   }
 
@@ -401,36 +458,64 @@ export function bandGeometry(
   ringSize: number,
   shelf = 0,
   thickness = BAND_THICKNESS,
+  /**
+   * Arcs where the outer face is flattened to the shelf, in sweep radians from the head.
+   *
+   * Along a pavé run the authored pieces are full-width band segments that complete the band's
+   * thickness themselves, so the shank is cut back to the seat and they stand on it. Leave the
+   * dome in and its crown arches over the stones, showing only slivers either side of the ridge;
+   * remove the shank altogether and the ring is hollow there, because the pieces are just 1.13mm
+   * deep against the band's 1.8mm. The source flattens rather than cuts, and so does this.
+   */
+  flats: { from: number; to: number }[] = [],
   segments = 256,
 ): THREE.BufferGeometry {
   const profile = bandProfile(style, fit, width, shelf, thickness);
+  // Same points, outer face capped at the seat. Identical count, so the sweep still stitches.
+  const seated = profile.map((p) => ({ ...p, radial: Math.min(p.radial, shelf) }));
+
   // The profile's radial zero sits one inner-depth out, so the comfort dome bottoms out on the
   // nominal size rather than cutting inside it.
   const base = bandInnerRadius(ringSize) + INNER_DEPTH;
+  const ring = profile.length;
+
+  const wrap = (a: number) => {
+    const t = a % (2 * Math.PI);
+    return t < 0 ? t + 2 * Math.PI : t;
+  };
+  const flattened = (i: number) => {
+    const a = wrap((i / segments) * 2 * Math.PI);
+    return flats.some(({ from, to }) => {
+      const f = wrap(from), t = wrap(to);
+      return f <= t ? a >= f && a <= t : a >= f || a <= t;
+    });
+  };
 
   const positions: number[] = [];
-  for (const p of profile) {
-    const r = base + p.radial;
-    for (let i = 0; i < segments; i++) {
-      const sweep = (i / segments) * 2 * Math.PI;
+  for (let i = 0; i < segments; i++) {
+    const sweep = (i / segments) * 2 * Math.PI;
+    const section = flattened(i) ? seated : profile;
+    for (const p of section) {
+      const r = base + p.radial;
       positions.push(r * Math.sin(sweep), r * Math.cos(sweep), p.axial);
     }
   }
 
   const index: number[] = [];
-  for (let row = 0; row < profile.length; row++) {
-    const next = (row + 1) % profile.length;
-    for (let i = 0; i < segments; i++) {
-      const j = (i + 1) % segments;
-      const a = row * segments + i;
-      const b = row * segments + j;
-      const c = next * segments + i;
-      const d = next * segments + j;
-      // Wound so the faces point outward. The sweep places the head at angle zero with
-      // `(sin, cos)`, which is a reflection of the usual `(cos, sin)` and so flips handedness —
-      // wound the other way the band renders inside out, reading as a hollow shell.
-      index.push(a, b, c);
-      index.push(b, d, c);
+  for (let i = 0; i < segments; i++) {
+    const next = (i + 1) % segments;
+    for (let k = 0; k < ring; k++) {
+      const j = (k + 1) % ring;
+      const a = i * ring + k;
+      const b = i * ring + j;
+      const c = next * ring + k;
+      const d = next * ring + j;
+      // Rows are sweep steps and columns are profile points here — the same nesting the arch
+      // uses, and the opposite of what this function used to do. Winding follows the nesting:
+      // transpose the grid without flipping the winding and every face points inward, which
+      // renders as a hollow shell you can see straight through.
+      index.push(a, c, b);
+      index.push(b, c, d);
     }
   }
 

@@ -18,9 +18,13 @@ import {
 import {
   bandPaveLayout,
   bandPaveThickness,
+  type BandPaveLayout,
   type BandPaveLength,
   type BandPavePart,
 } from "@/lib/settings/bandPave";
+
+/** Stable empty list so a plain shank's geometry memo doesn't thrash. */
+const EMPTY_GAPS: { from: number; to: number }[] = [];
 import {
   bakeToMillimetres,
   drawable,
@@ -51,6 +55,8 @@ import {
   cathedralGeometry,
   cathedralPath,
   cathedralShoulders,
+  cathedralSectionRadial,
+  CATHEDRAL_INSET,
   BAND_THICKNESS,
   type CathedralShoulders,
   type BandFit,
@@ -1530,6 +1536,7 @@ function BandPaveRun({
   metal,
   envMap,
   base,
+  thickness,
   cathedral,
 }: {
   model: string;
@@ -1539,6 +1546,7 @@ function BandPaveRun({
   metal: THREE.Material;
   envMap: THREE.Texture;
   base: number;
+  thickness: number;
   cathedral: CathedralShoulders | null;
 }) {
   const parts = useBakedParts(model);
@@ -1555,15 +1563,49 @@ function BandPaveRun({
         // The layout works in angles measured from the head; the arch is solved in the same
         // terms, so a bead on the rise lifts with the band instead of staying on the circle.
         const sweep = Math.PI / 2 - angle;
-        const { up, side } = cathedralPath(sweep, radius, base, cathedral);
-        const m = new THREE.Matrix4()
-          .makeRotationZ(Math.atan2(up, side))
-          .multiply(new THREE.Matrix4().makeRotationX(-Math.PI / 2));
+        // Seated on the shoulder's outer face, so the seat is solved with the arch's own
+        // section taper and inset — literally the same two calls the arch builds itself from.
+        // Solving it off `cathedralTaper` instead sinks the run: the pinch runs to zero at the
+        // head while the section keeps a neck's worth of metal, so the face climbs away from a
+        // pinch-solved seat and closes over the stones right where the shoulder is tallest.
+        const section = cathedralSectionRadial(sweep, cathedral, thickness);
+        const seat = base + (radius - base) * section * CATHEDRAL_INSET;
+        const here = cathedralPath(sweep, seat, base, cathedral);
+
+        // Frame taken off the path rather than off the origin: on the rise the band's outward
+        // normal is no longer the direction back to the ring's centre, and seating the beads
+        // radially there would tip them into the shoulder.
+        const step = 1e-3;
+        const ahead = cathedralPath(sweep + step, seat, base, cathedral);
+        const behind = cathedralPath(sweep - step, seat, base, cathedral);
+        const along = new THREE.Vector3(
+          ahead.side - behind.side,
+          ahead.up - behind.up,
+          0,
+        ).normalize();
+        // Turn the tangent a quarter to get the outward normal, flipping the pair together so
+        // the basis stays right-handed.
+        const outward = new THREE.Vector3(-along.y, along.x, 0);
+        if (outward.x * here.side + outward.y * here.up < 0) {
+          outward.negate();
+          along.negate();
+        }
+
+        // Baked axes, measured off the model rather than guessed: x is the radial depth (the
+        // melee is 0.50 deep on x and centred 0.315 out along it), y spans the band's width
+        // (0.91 -> 1.71mm, the band's own width) and z runs along the band (1.39 -> 2.62mm, so
+        // consecutive pieces overlap at the 1.62mm pitch into a continuous rail).
+        const across = new THREE.Vector3(0, 0, 1);
+        const m = new THREE.Matrix4().makeBasis(outward, across, along);
+
+        // Full size the whole way round. Measured off the source: every melee in the run is
+        // 1.511mm across the band, on the rise exactly as on the straight, so the pieces are
+        // placed along the shoulder rather than scaled into it.
         m.scale(new THREE.Vector3(scale, scale, scale));
-        m.setPosition(side, up, 0);
+        m.setPosition(here.side, here.up, 0);
         return m;
       }),
-    [placements, radius, scale, base, cathedral],
+    [placements, radius, scale, base, thickness, cathedral],
   );
 
   return (
@@ -1592,34 +1634,21 @@ function BandPaveRun({
 /** Petite French pavé along the band's shoulders. */
 function BandPave({
   ringSize,
-  bandWidthMm,
-  prongWidth,
-  length,
   color,
   thickness,
   cathedral,
+  layout,
 }: {
   ringSize: number;
-  bandWidthMm: number;
-  prongWidth: number;
-  length: BandPaveLength;
   color: string;
   thickness: number;
   cathedral: CathedralShoulders | null;
+  layout: BandPaveLayout;
 }) {
   const metal = useMetalMaterial(color);
   const envMap = useCubeEnv(DIAMOND_HDR, STONE_DESATURATION, STONE_FILL);
 
-  const layout = useMemo(
-    () =>
-      bandPaveLayout(
-        bandWidthMm,
-        bandInnerRadius(ringSize),
-        prongWidth,
-        length,
-      ),
-    [bandWidthMm, ringSize, prongWidth, length],
-  );
+
 
   const runs = useMemo(() => {
     const grouped = new Map<BandPavePart, { angle: number }[]>();
@@ -1643,6 +1672,7 @@ function BandPave({
           metal={metal}
           envMap={envMap}
           base={bandInnerRadius(ringSize) + 0.2 * BAND_THICKNESS}
+          thickness={thickness}
           cathedral={cathedral}
         />
       ))}
@@ -1659,6 +1689,7 @@ function Shank({
   shelf,
   thickness,
   cathedral,
+  gaps,
 }: {
   color: string;
   ringSize: number;
@@ -1671,13 +1702,23 @@ function Shank({
   thickness: number;
   /** Set when the shoulders rise to meet the head. */
   cathedral: CathedralShoulders | null;
+  /** Arcs where the outer face is flattened so the pavé pieces stand on it. */
+  gaps: { from: number; to: number }[];
 }) {
   const metal = useMetalMaterial(color);
 
   const geometry = useMemo(
     () =>
-      bandGeometry(bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness),
-    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness],
+      bandGeometry(
+        bandStyle,
+        bandFit,
+        bandWidthMm,
+        ringSize,
+        shelf,
+        thickness,
+        gaps,
+      ),
+    [bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, gaps],
   );
   useLayoutEffect(() => () => geometry.dispose(), [geometry]);
 
@@ -1693,9 +1734,10 @@ function Shank({
             cathedral,
             shelf,
             thickness,
+            gaps,
           )
         : null,
-    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness],
+    [cathedral, bandStyle, bandFit, bandWidthMm, ringSize, shelf, thickness, gaps],
   );
   useLayoutEffect(() => () => arches?.dispose(), [arches]);
 
@@ -1749,6 +1791,20 @@ export default function RingScene({
   const bandShelf = bandPave
     ? bandThickness - 0.2 * BAND_THICKNESS - 0.6351111111111111 * bandWidthMm
     : 0;
+
+  // Solved once: the shank needs its gaps, the run needs its placements.
+  const paveLayout = useMemo(
+    () =>
+      bandPave
+        ? bandPaveLayout(
+            bandWidthMm,
+            bandInnerRadius(ringSize),
+            head.prongWidth,
+            bandPaveLength,
+          )
+        : null,
+    [bandPave, bandWidthMm, ringSize, head.prongWidth, bandPaveLength],
+  );
 
   // The cathedral's shoulders have to land on the head's own seat, so they are solved from it.
   const dims = stoneDimensionsAtCarat(stone, carat);
@@ -1806,17 +1862,16 @@ export default function RingScene({
             shelf={bandShelf}
             thickness={bandThickness}
             cathedral={shoulders}
+            gaps={paveLayout?.gaps ?? EMPTY_GAPS}
           />
 
-          {bandPave && (
+          {bandPave && paveLayout && (
             <BandPave
               ringSize={ringSize}
-              bandWidthMm={bandWidthMm}
-              prongWidth={head.prongWidth}
-              length={bandPaveLength}
               color={metalColor}
               thickness={bandThickness}
               cathedral={shoulders}
+              layout={paveLayout}
             />
           )}
 
