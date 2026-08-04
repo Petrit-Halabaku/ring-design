@@ -1,7 +1,8 @@
 /* eslint-disable @next/next/no-img-element -- a runtime canvas data: URL, not a static asset */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ViewGallery from "./ViewGallery";
 import {
   RING_VIEWS,
   type Category,
@@ -52,6 +53,15 @@ export default function ReviewSheet({
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<HTMLElement | null>(null);
+  const [galleryView, setGalleryView] = useState<RingView | null>(null);
+
+  // This component stays mounted while closed, so gallery state would survive a close and
+  // reopen — landing the user straight back in the gallery. Every close path goes through
+  // here so that cannot happen.
+  const close = useCallback(() => {
+    setGalleryView(null);
+    onClose();
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,8 +69,11 @@ export default function ReviewSheet({
     panelRef.current?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
+      // The gallery sits above this dialog and owns the keyboard while it is open, so Escape
+      // closes the gallery first instead of dismissing both at once.
+      if (galleryView) return;
       if (e.key === "Escape") {
-        onClose();
+        close();
         return;
       }
       if (e.key !== "Tab") return;
@@ -87,7 +100,7 @@ export default function ReviewSheet({
       document.removeEventListener("keydown", onKeyDown);
       restoreTo.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open, close, galleryView]);
 
   if (!open) return null;
 
@@ -106,7 +119,7 @@ export default function ReviewSheet({
         <h2 className="font-serif text-[17px] text-ink-900">Your ring</h2>
         <button
           type="button"
-          onClick={onClose}
+          onClick={close}
           aria-label="Close review"
           className="grid size-11 place-items-center rounded-md text-ink-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500"
         >
@@ -127,21 +140,31 @@ export default function ReviewSheet({
         <div className="grid grid-cols-2 gap-2 px-4 pt-4 sm:grid-cols-4">
           {RING_VIEWS.map((view) => (
             <figure key={view} className="m-0">
-              <div className="grid aspect-square place-items-center overflow-hidden rounded-md border border-line/60 bg-sand-100">
-                {shots ? (
+              {shots ? (
+                <button
+                  type="button"
+                  onClick={() => setGalleryView(view)}
+                  aria-label={`Open ${VIEW_LABELS[view]} view fullscreen`}
+                  className="grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-line/60 bg-sand-100 transition-colors hover:border-ink-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500"
+                >
+                  {/* The button carries the label, so the image itself stays out of the
+                      accessibility tree rather than announcing the same thing twice. */}
                   <img
                     src={shots[view]}
-                    alt={`${VIEW_LABELS[view]} view of your ring`}
+                    alt=""
+                    aria-hidden
                     className="h-full w-full object-contain"
                   />
-                ) : (
+                </button>
+              ) : (
+                <div className="grid aspect-square place-items-center overflow-hidden rounded-md border border-line/60 bg-sand-100">
                   <div
                     className="designer-spinner"
                     role="status"
                     aria-label="Rendering your ring"
                   />
-                )}
-              </div>
+                </div>
+              )}
               <figcaption className="mt-1 text-center text-[13px] text-ink-600">
                 {VIEW_LABELS[view]}
               </figcaption>
@@ -187,6 +210,15 @@ export default function ReviewSheet({
         )}
       </div>
       </div>
+
+      {galleryView && shots && (
+        <ViewGallery
+          shots={shots}
+          view={galleryView}
+          onView={setGalleryView}
+          onClose={() => setGalleryView(null)}
+        />
+      )}
     </div>
   );
 }

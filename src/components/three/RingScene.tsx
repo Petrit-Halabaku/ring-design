@@ -106,11 +106,12 @@ import { RING_VIEWS, type RingShots, type RingView } from "@/lib/designer/types"
 const CAMERA_TARGET: [number, number, number] = [0, 2, 0];
 
 /**
- * Longest edge of a captured view, in px. The review sheet shows these as thumbnails, so
- * exporting the canvas at full resolution would put four multi-megabyte data URLs in React
- * state for no visible gain.
+ * Longest edge of a captured view, in px. Sized for the fullscreen gallery, not the
+ * thumbnails — at 512 the captures upscaled into a soft mess when opened. On a typical
+ * desktop stage (~900px) this is effectively no downscale; it mainly caps high-DPR canvases,
+ * which would otherwise put several megabytes of data URLs into React state.
  */
-const MAX_SHOT_PX = 512;
+const MAX_SHOT_PX = 1024;
 
 /**
  * Copies the WebGL canvas into a smaller 2D canvas and exports that. Must be called in the
@@ -1836,27 +1837,51 @@ function CanvasCapture({
 
     // Orbit the camera to each angle, render, and read — all synchronously in this one task,
     // so every read happens while its own frame is still in the drawing buffer.
-    const cam = camera;
-    const target = new THREE.Vector3(...CAMERA_TARGET);
-    const radius = cam.position.distanceTo(target);
+    const cam = camera as THREE.PerspectiveCamera;
 
     const prevPosition = cam.position.clone();
     const prevQuaternion = cam.quaternion.clone();
+
+    /*
+     * Frame each view on the ring's real bounds rather than reusing the user's orbit radius.
+     * Reusing it meant that however the user had zoomed in to inspect a detail, every captured
+     * view inherited that distance and the ring ran off the edge of the frame.
+     *
+     * Fitting also has to account for the *narrower* of the two field-of-view axes: a portrait
+     * phone stage is limited horizontally, a wide desktop stage vertically. Solving only for
+     * the vertical fov clips the sides of the top and bottom views, which are the widest.
+     */
+    const bounds = new THREE.Box3().setFromObject(scene);
+    const centre = bounds.isEmpty()
+      ? new THREE.Vector3(...CAMERA_TARGET)
+      : bounds.getCenter(new THREE.Vector3());
+    const sphere = bounds.isEmpty()
+      ? new THREE.Sphere(centre, 20)
+      : bounds.getBoundingSphere(new THREE.Sphere());
+
+    const vFov = THREE.MathUtils.degToRad(cam.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * cam.aspect);
+    // 1.18 leaves a little breathing room so the ring never touches the frame edge.
+    const fit =
+      (sphere.radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.18;
 
     // Top and bottom sit on the camera's own up axis, so they need a hair of lateral offset
     // or `lookAt` degenerates and the view flips unpredictably.
     const EPS = 0.001;
     const positions: Record<RingView, THREE.Vector3> = {
-      front: new THREE.Vector3(0, target.y, radius),
-      side: new THREE.Vector3(radius, target.y, 0),
-      top: new THREE.Vector3(0, target.y + radius, EPS),
-      bottom: new THREE.Vector3(0, target.y - radius, EPS),
+      front: new THREE.Vector3(centre.x, centre.y, centre.z + fit),
+      side: new THREE.Vector3(centre.x + fit, centre.y, centre.z),
+      top: new THREE.Vector3(centre.x, centre.y + fit, centre.z + EPS),
+      bottom: new THREE.Vector3(centre.x, centre.y - fit, centre.z + EPS),
     };
+
+    // No near/far adjustment needed: the scene's far plane of 500 accommodates a fitted
+    // distance for a bounding radius up to ~62mm, and a real ring is 12-20mm.
 
     const shots = {} as RingShots;
     for (const view of RING_VIEWS) {
       cam.position.copy(positions[view]);
-      cam.lookAt(target);
+      cam.lookAt(centre);
       cam.updateMatrixWorld();
       gl.render(scene, cam);
       shots[view] = toScaledPng(gl.domElement);
