@@ -1,32 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import RingViewer from "@/components/three/RingViewer";
-import { fetchRingSettings, SNAPSHOT } from "@/lib/settings/client";
+import { localModelUrl } from "@/lib/settings/models";
 import {
-  hasLocalModel,
-  localModelUrl,
-  SHAPE_TO_STONE_NAME,
-} from "@/lib/settings/models";
-import {
-  DEFAULT_PRONG_COUNT,
-  DEFAULT_PRONG_TIP,
   PRONG_TIPS,
-  prongAngles,
-  prongCountsFor,
   prongTipModel,
-  resolveProngCount,
-  type ProngCount,
-  type ProngTipId,
 } from "@/lib/settings/prongs";
-import {
-  BASKET_HALOS,
-  DEFAULT_BASKET_HALO,
-  type BasketHaloId,
-} from "@/lib/settings/basketHalo";
+import { BASKET_HALOS } from "@/lib/settings/basketHalo";
 import { BAND_FITS, BAND_STYLES } from "@/lib/settings/bandGeometry";
 import { BAND_PAVE_LENGTHS } from "@/lib/settings/bandPave";
-import type { RingSettings } from "@/lib/settings/types";
+import { useRingConfig } from "@/lib/designer/useRingConfig";
 
 /**
  * The 3D Ring Designer.
@@ -117,67 +101,10 @@ export type DesignerProps = {
 };
 
 export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerProps) {
-  const [settings, setSettings] = useState<RingSettings>(SNAPSHOT);
   const [open, setOpen] = useState<string | null>(null);
-  const [selections, setSelections] = useState<Record<string, number>>({});
-  const [bandWidth, setBandWidth] = useState(1.7);
-  const [ringSize, setRingSize] = useState(6);
-  const [engraving, setEngraving] = useState("");
-  const [carat, setCarat] = useState(initialCarat ?? 1);
-  const [prongCount, setProngCount] = useState<ProngCount>(DEFAULT_PRONG_COUNT);
-  const [prongTip, setProngTip] = useState<ProngTipId>(DEFAULT_PRONG_TIP);
-  const [prongPave, setProngPave] = useState(false);
-  const [basketHalo, setBasketHalo] =
-    useState<BasketHaloId>(DEFAULT_BASKET_HALO);
-  // null = prongs follow the band. The configurator calls a split "Mixed".
-  const [prongMetalIdx, setProngMetalIdx] = useState<number | null>(null);
-
-  const [stoneIdx, setStoneIdx] = useState(() => {
-    const wanted = shapeId ? SHAPE_TO_STONE_NAME[shapeId] : "Round";
-    // Indexes into the filtered list the picker renders, not the raw API order.
-    const i = SNAPSHOT.stones
-      .filter((s) => hasLocalModel(s.glbUrl))
-      .findIndex((s) => s.name === wanted);
-    return i >= 0 ? i : 0;
-  });
-  // 18K Yellow is the configurator's default.
-  const [metalIdx, setMetalIdx] = useState(() =>
-    Math.max(
-      0,
-      SNAPSHOT.metals.findIndex((m) => m.uiValue === "18K Yellow"),
-    ),
-  );
-
-  // The live app fetches every settings endpoint on boot; the snapshot seeds the
-  // first paint so the canvas never waits on a cold Render dyno.
-  useEffect(() => {
-    const ac = new AbortController();
-    fetchRingSettings(ac.signal).then(setSettings).catch(() => {});
-    return () => ac.abort();
-  }, []);
-
-  // Only offer shapes whose GLB is actually available (see hasLocalModel).
-  const stones = useMemo(
-    () => settings.stones.filter((s) => hasLocalModel(s.glbUrl)),
-    [settings.stones],
-  );
-  const stone = stones[stoneIdx] ?? stones[0] ?? SNAPSHOT.stones[0];
-  const metal = settings.metals[metalIdx] ?? SNAPSHOT.metals[0];
-  const caratRange = settings.caratWeights.solitaire.center;
-
-  // Layouts depend on the shape: a marquise only takes six prongs, a princess only four,
-  // and a pear takes three or five. Keep the selection valid as the shape changes.
-  const prongCountOptions = useMemo(
-    () => prongCountsFor(stone, carat),
-    [stone, carat],
-  );
-  const activeProngCount = resolveProngCount(stone, carat, prongCount);
-  const angles = useMemo(
-    () => prongAngles(stone, carat, activeProngCount),
-    [stone, carat, activeProngCount],
-  );
-  const prongMetal =
-    prongMetalIdx === null ? metal : (settings.metals[prongMetalIdx] ?? metal);
+  const cfg = useRingConfig({ shapeId, carat: initialCarat });
+  const { settings, stones, stone, metal, prongMetal, caratRange,
+          prongCountOptions, activeProngCount, angles, value, set } = cfg;
 
   const panels: Panel[] = useMemo(
     () => [
@@ -189,7 +116,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           {
             label: "Head & Band Color",
             hint: metal.description,
-            selected: metalIdx,
+            selected: value.metalIdx,
             choices: settings.metals.map((m) => ({ label: m.uiValue })),
           },
         ],
@@ -201,8 +128,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
         groups: [
           {
             label: "Select Your Stones",
-            hint: `Center: ${carat} carat ${stone.name}`,
-            selected: stoneIdx,
+            hint: `Center: ${value.carat} carat ${stone.name}`,
+            selected: value.stoneIdx,
             choices: stones.map((s) => ({ label: s.name })),
           },
           {
@@ -221,11 +148,11 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           {
             label: "Basket & Halo",
             hint:
-              BASKET_HALOS.find((b) => b.id === basketHalo)?.hint ??
+              BASKET_HALOS.find((b) => b.id === value.basketHalo)?.hint ??
               "No basket/halo",
             selected: Math.max(
               0,
-              BASKET_HALOS.findIndex((b) => b.id === basketHalo),
+              BASKET_HALOS.findIndex((b) => b.id === value.basketHalo),
             ),
             choices: BASKET_HALOS.map((b) => ({ label: b.label })),
           },
@@ -237,26 +164,26 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           },
           {
             label: "Prong Tips",
-            hint: `${prongTip} Prong Tips`,
+            hint: `${value.prongTip} Prong Tips`,
             selected: Math.max(
               0,
-              PRONG_TIPS.findIndex((t) => t.id === prongTip),
+              PRONG_TIPS.findIndex((t) => t.id === value.prongTip),
             ),
             choices: PRONG_TIPS.map((t) => ({ label: t.label })),
           },
           {
             label: "Prong Pave",
-            hint: prongPave ? "Pave prong arms" : "Plain prong arms",
-            selected: prongPave ? 1 : 0,
+            hint: value.prongPave ? "Pave prong arms" : "Plain prong arms",
+            selected: value.prongPave ? 1 : 0,
             choices: [{ label: "None" }, { label: "Pave" }],
           },
           {
             label: "Prong Metal",
             hint:
-              prongMetalIdx === null
+              value.prongMetalIdx === null
                 ? "Matches the band"
                 : prongMetal.description,
-            selected: prongMetalIdx === null ? 0 : prongMetalIdx + 1,
+            selected: value.prongMetalIdx === null ? 0 : value.prongMetalIdx + 1,
             choices: [
               { label: "Match Band" },
               ...settings.metals.map((m) => ({ label: m.uiValue })),
@@ -270,51 +197,64 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
       settings.metals,
       stones,
       metal,
-      metalIdx,
+      value.metalIdx,
       stone,
-      stoneIdx,
-      carat,
+      value.stoneIdx,
+      value.carat,
       angles.length,
       activeProngCount,
       prongCountOptions,
-      prongTip,
-      prongPave,
-      prongMetalIdx,
+      value.prongTip,
+      value.prongPave,
+      value.prongMetalIdx,
       prongMetal,
-      basketHalo,
+      value.basketHalo,
     ],
   );
 
-  const key = (panelId: string, groupIdx: number) => `${panelId}-${groupIdx}`;
-
   function choose(panelId: string, groupIdx: number, choiceIdx: number) {
-    if (panelId === "metal" && groupIdx === 0) setMetalIdx(choiceIdx);
-    else if (panelId === "diamonds" && groupIdx === 0) setStoneIdx(choiceIdx);
+    if (panelId === "metal" && groupIdx === 0) set.setMetalIdx(choiceIdx);
+    else if (panelId === "diamonds" && groupIdx === 0) set.setStoneIdx(choiceIdx);
     else if (panelId === "head" && groupIdx === 0)
-      setBasketHalo(BASKET_HALOS[choiceIdx].id);
+      set.setBasketHalo(BASKET_HALOS[choiceIdx].id);
     else if (panelId === "head" && groupIdx === 1)
-      setProngCount(prongCountOptions[choiceIdx]);
+      set.setProngCount(prongCountOptions[choiceIdx]);
     else if (panelId === "head" && groupIdx === 2)
-      setProngTip(PRONG_TIPS[choiceIdx].id);
-    else if (panelId === "head" && groupIdx === 3) setProngPave(choiceIdx === 1);
+      set.setProngTip(PRONG_TIPS[choiceIdx].id);
+    else if (panelId === "head" && groupIdx === 3) set.setProngPave(choiceIdx === 1);
     else if (panelId === "head" && groupIdx === 4)
-      setProngMetalIdx(choiceIdx === 0 ? null : choiceIdx - 1);
-    else {
-      // Switching a cathedral on with a bare head fits a basket for it to land on. Ported from
-      // the source's own handler, which reads `"None" !== e && "None" === basketHalo` before
-      // setting `basketHalo` to Basket — so it only fills an empty choice. A halo, bezel or
-      // hidden halo already gives the shoulders something to meet and is left alone.
-      if (panelId === "band" && groupIdx === 1 && choiceIdx !== 0) {
-        setBasketHalo((current) => (current === "None" ? "Basket" : current));
-      }
-      setSelections((s) => ({ ...s, [key(panelId, groupIdx)]: choiceIdx }));
-    }
+      set.setProngMetalIdx(choiceIdx === 0 ? null : choiceIdx - 1);
+    else if (panelId === "band" && groupIdx === 0)
+      set.setBandStyle(BAND_STYLES[choiceIdx]);
+    else if (panelId === "band" && groupIdx === 1)
+      set.setCathedral(choiceIdx === 1);
+    else if (panelId === "band" && groupIdx === 2)
+      set.setBandPave(choiceIdx === 1);
+    else if (panelId === "band" && groupIdx === 3)
+      set.setBandFit(BAND_FITS[choiceIdx]);
+    else if (panelId === "band" && groupIdx === 4)
+      set.setBandPaveLength(BAND_PAVE_LENGTHS[choiceIdx]);
+    else if (panelId === "more" && groupIdx === 0)
+      set.setEngravingFont(choiceIdx === 1 ? "Cursive" : "Block");
+    else if (panelId === "more" && groupIdx === 1)
+      set.setSurpriseStones(choiceIdx === 1);
   }
 
-  function activeChoice(panel: Panel, groupIdx: number, group: Group) {
-    if (panel.id === "metal" && groupIdx === 0) return metalIdx;
-    if (panel.id === "diamonds" && groupIdx === 0) return stoneIdx;
-    return selections[key(panel.id, groupIdx)] ?? group.selected;
+  function activeChoice(panel: Panel, groupIdx: number, group: Group): number {
+    if (panel.id === "metal" && groupIdx === 0) return value.metalIdx;
+    if (panel.id === "diamonds" && groupIdx === 0) return value.stoneIdx;
+    if (panel.id === "band" && groupIdx === 0)
+      return Math.max(0, BAND_STYLES.indexOf(value.bandStyle));
+    if (panel.id === "band" && groupIdx === 1) return value.cathedral ? 1 : 0;
+    if (panel.id === "band" && groupIdx === 2) return value.bandPave ? 1 : 0;
+    if (panel.id === "band" && groupIdx === 3)
+      return Math.max(0, BAND_FITS.indexOf(value.bandFit));
+    if (panel.id === "band" && groupIdx === 4)
+      return Math.max(0, BAND_PAVE_LENGTHS.indexOf(value.bandPaveLength));
+    if (panel.id === "more" && groupIdx === 0)
+      return value.engravingFont === "Cursive" ? 1 : 0;
+    if (panel.id === "more" && groupIdx === 1) return value.surpriseStones ? 1 : 0;
+    return 0;
   }
 
   return (
@@ -333,29 +273,25 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
             <RingViewer
               stone={stone}
               stoneModel={localModelUrl(stone.glbUrl)}
-              carat={carat}
+              carat={value.carat}
               metalColor={metal.material.color}
-              ringSize={ringSize}
-              bandWidthMm={bandWidth}
+              ringSize={value.ringSize}
+              bandWidthMm={value.bandWidth}
               prongAngles={angles}
               prongCountType={activeProngCount}
-              prongTipModel={prongTipModel(prongTip)}
-              prongTipId={prongTip}
+              prongTipModel={prongTipModel(value.prongTip)}
+              prongTipId={value.prongTip}
               prongMetalColor={prongMetal.material.color}
-              prongPave={prongPave}
-              basketHalo={basketHalo}
-              cathedral={(selections["band-1"] ?? 0) === 1}
-              bandStyle={BAND_STYLES[selections["band-0"] ?? 0] ?? "Round"}
-              bandFit={BAND_FITS[selections["band-3"] ?? 0] ?? "Comfort Fit"}
-              engravingText={engraving}
-              engravingFont={
-                (selections["more-0"] ?? 0) === 1 ? "Cursive" : "Block"
-              }
-              surpriseStones={(selections["more-1"] ?? 0) === 1}
-              bandPave={(selections["band-2"] ?? 0) === 1}
-              bandPaveLength={
-                BAND_PAVE_LENGTHS[selections["band-4"] ?? 1] ?? "Half"
-              }
+              prongPave={value.prongPave}
+              basketHalo={value.basketHalo}
+              cathedral={value.cathedral}
+              bandStyle={value.bandStyle}
+              bandFit={value.bandFit}
+              engravingText={value.engravingText}
+              engravingFont={value.engravingFont}
+              surpriseStones={value.surpriseStones}
+              bandPave={value.bandPave}
+              bandPaveLength={value.bandPaveLength}
             />
           </div>
 
@@ -437,7 +373,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                               Carat Weight
                             </span>
                             <span className="text-[12px] text-neutral-500">
-                              {carat.toFixed(2)} ct
+                              {value.carat.toFixed(2)} ct
                             </span>
                           </div>
                           <input
@@ -445,8 +381,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                             min={caratRange.min}
                             max={caratRange.max}
                             step={0.05}
-                            value={carat}
-                            onChange={(e) => setCarat(+e.target.value)}
+                            value={value.carat}
+                            onChange={(e) => set.setCarat(+e.target.value)}
                             className="mt-2 w-full accent-neutral-900"
                           />
                         </div>
@@ -460,7 +396,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                                 Band Width
                               </span>
                               <span className="text-[12px] text-neutral-500">
-                                {bandWidth.toFixed(1)}
+                                {value.bandWidth.toFixed(1)}
                               </span>
                             </div>
                             <input
@@ -468,8 +404,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                               min={1.5}
                               max={4}
                               step={0.1}
-                              value={bandWidth}
-                              onChange={(e) => setBandWidth(+e.target.value)}
+                              value={value.bandWidth}
+                              onChange={(e) => set.setBandWidth(+e.target.value)}
                               className="mt-2 w-full accent-neutral-900"
                             />
                           </div>
@@ -479,7 +415,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                                 Ring Size (US)
                               </span>
                               <span className="text-[12px] text-neutral-500">
-                                {ringSize.toFixed(2)}
+                                {value.ringSize.toFixed(2)}
                               </span>
                             </div>
                             <div className="mt-0.5 text-[11px] leading-snug text-neutral-500">
@@ -490,8 +426,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                               min={3}
                               max={13}
                               step={0.25}
-                              value={ringSize}
-                              onChange={(e) => setRingSize(+e.target.value)}
+                              value={value.ringSize}
+                              onChange={(e) => set.setRingSize(+e.target.value)}
                               className="mt-2 w-full accent-neutral-900"
                             />
                           </div>
@@ -509,8 +445,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
                           <input
                             type="text"
                             maxLength={14}
-                            value={engraving}
-                            onChange={(e) => setEngraving(e.target.value)}
+                            value={value.engravingText}
+                            onChange={(e) => set.setEngravingText(e.target.value)}
                             className="mt-2 w-full rounded-md border border-neutral-200 px-2.5 py-1.5 text-[12px] outline-none focus:border-neutral-900"
                           />
                         </div>
