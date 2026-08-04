@@ -19,6 +19,9 @@ type Snap = (typeof SNAPS)[number];
 /** Past this much travel a drag that ends short of the next snap still commits to it. */
 const FLICK_VELOCITY = 0.5; // px per ms
 
+/** Travel before a press is treated as a drag rather than a tap on the control underneath. */
+const PRESS_SLOP = 6; // px
+
 type Props = {
   categories: Category[];
   activeId: string;
@@ -35,7 +38,17 @@ export default function OptionSheet({ categories, activeId, onSelect, footer }: 
 
   // Geometry, all px. Recomputed when the visual viewport or the rail resizes.
   const geo = useRef({ railH: 76, peekH: 320, fullH: 480 });
-  const drag = useRef({ startY: 0, startOffset: 0, lastY: 0, lastT: 0, v: 0 });
+  // `id` is the pointer being tracked (-1 = none); `active` marks that PRESS_SLOP was passed
+  // and the gesture became a drag, which is what distinguishes a drag from a tap.
+  const drag = useRef({
+    startY: 0,
+    startOffset: 0,
+    lastY: 0,
+    lastT: 0,
+    v: 0,
+    id: -1,
+    active: false,
+  });
 
   const offsetFor = useCallback((s: Snap) => {
     const { railH, peekH, fullH } = geo.current;
@@ -61,7 +74,12 @@ export default function OptionSheet({ categories, activeId, onSelect, footer }: 
 
     const railH = railRef.current?.offsetHeight ?? 76;
     const peekH = Math.min(420, Math.max(240, layoutH * 0.38));
-    const fullH = Math.max(peekH, appH - 88);
+
+    // Measure the top bar rather than assuming a height. It is 52px plus
+    // env(safe-area-inset-top), so on a notched iPhone it is ~99px — a hardcoded 88 let the
+    // sheet's top (and its drag handle) slide underneath the bar at the `full` snap.
+    const barH = root.querySelector("header")?.getBoundingClientRect().height ?? 52;
+    const fullH = Math.max(peekH, appH - barH - 8);
 
     geo.current = { railH, peekH, fullH };
     root.style.setProperty("--peek-h", `${Math.round(peekH)}px`);
@@ -103,20 +121,41 @@ export default function OptionSheet({ categories, activeId, onSelect, footer }: 
   function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
     if (isWide) return;
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    /*
+     * Deliberately NOT calling setPointerCapture here.
+     *
+     * This handler sits on a wrapper that CONTAINS the drag handle and the whole category
+     * rail. Capturing on pointerdown retargets the subsequent pointerup to this wrapper, so
+     * the browser generates its `click` on the wrapper instead of the button that was
+     * pressed — which made every rail tab and the handle completely dead to taps, leaving
+     * the sheet stuck on whichever category was selected first.
+     *
+     * Capture is taken lazily in onPointerMove, once travel exceeds PRESS_SLOP and the
+     * gesture is unambiguously a drag rather than a tap.
+     */
     drag.current = {
       startY: e.clientY,
       startOffset: offsetFor(snap),
       lastY: e.clientY,
       lastT: e.timeStamp,
       v: 0,
+      id: e.pointerId,
+      active: false,
     };
-    setDragging(true);
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!dragging) return;
     const d = drag.current;
+    if (d.id !== e.pointerId) return;
+
+    if (!d.active) {
+      // Still ambiguous: a tap must stay a tap so the click lands on the tab underneath.
+      if (Math.abs(e.clientY - d.startY) < PRESS_SLOP) return;
+      d.active = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDragging(true);
+    }
+
     const dt = e.timeStamp - d.lastT;
     if (dt > 0) d.v = (e.clientY - d.lastY) / dt;
     d.lastY = e.clientY;
@@ -131,8 +170,15 @@ export default function OptionSheet({ categories, activeId, onSelect, footer }: 
   }
 
   function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!dragging) return;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    const d0 = drag.current;
+    if (d0.id !== e.pointerId) return;
+    d0.id = -1;
+    // A press that never passed PRESS_SLOP was a tap: leave it alone so the click fires.
+    if (!d0.active) return;
+    d0.active = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setDragging(false);
 
     const d = drag.current;

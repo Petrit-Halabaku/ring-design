@@ -22,7 +22,17 @@
   --peek-h: clamp(240px, calc(var(--layout-h) * 0.38), 420px);
   --rail-h: 76px;
   --sheet-full-h: 480px;
-  --sheet-y: 0px;
+  /*
+   * Start at the peek offset, not 0. --sheet-y: 0 means the sheet is fully expanded, so the
+   * pre-hydration paint showed it covering the ring and then jumping down once JS measured —
+   * the app's first impression was a lurch. Peek is derivable in CSS, so the first paint can
+   * already be correct; JS overwrites this with exact px on mount.
+   */
+  --sheet-y: calc(var(--sheet-full-h) - var(--peek-h));
+
+  /* Width of the right-hand panel at >=768px. Single source of truth: the panel, the stage's
+     width, and the top bar's right edge all derive from it, so they cannot drift apart. */
+  --panel-w: 360px;
 }
 
 /*
@@ -147,7 +157,7 @@
   .designer-sheet {
     top: 0;
     left: auto;
-    width: 360px;
+    width: var(--panel-w);
     height: 100%;
     border-left: 1px solid var(--color-line);
     border-top-left-radius: 0;

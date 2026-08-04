@@ -28,11 +28,19 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
 
   return (
     <div ref={railRef} className="border-b border-line/60">
+      {/*
+        An equal-width grid, not a horizontally scrolling flex row.
+        Laid out side by side with icons, the five tabs measure ~465px — wider than every
+        target viewport (320/360/390px phones and the 360px desktop panel). Since the rail
+        also hid its scrollbar, four categories were simply unreachable with no affordance
+        that they existed. A 5-column grid always fits; the icon moves above the label to buy
+        the horizontal room.
+      */}
       <div
         role="tablist"
         aria-label="Ring options"
         onKeyDown={onKeyDown}
-        className="flex gap-1 overflow-x-auto px-2 [scroll-padding-inline:0.5rem] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="grid grid-cols-5"
       >
         {categories.map((c) => {
           const active = c.id === activeId;
@@ -45,7 +53,7 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
               aria-controls={`panel-${c.id}`}
               tabIndex={active ? 0 : -1}
               onClick={() => onSelect(c.id)}
-              className={`relative flex min-h-[52px] shrink-0 items-center gap-1.5 px-3 text-[13px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500 ${
+              className={`relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 px-1 text-center text-[13px] leading-tight transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500 ${
                 active ? "text-ink-900" : "text-ink-600"
               }`}
             >
@@ -56,7 +64,7 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
               {active && (
                 <span
                   aria-hidden
-                  className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-champagne-500"
+                  className="absolute inset-x-1.5 bottom-0 h-0.5 rounded-full bg-champagne-500"
                 />
               )}
             </button>

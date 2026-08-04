@@ -39,7 +39,7 @@ export default function RingStage({
 
   return (
     <div
-      className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-360px)]"
+      className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-var(--panel-w))]"
       style={{ "--stage-h": "calc(var(--layout-h) - var(--peek-h))" } as React.CSSProperties}
       onPointerDown={dismissHint}
     >
