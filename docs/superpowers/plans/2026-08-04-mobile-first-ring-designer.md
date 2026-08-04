@@ -67,6 +67,7 @@ Foundation only. The app must look essentially unchanged after this task — the
 - Create: `src/styles/designer.css`
 - Modify: `src/styles/wizard.css:847-868` (delete two rules)
 - Modify: `src/components/three/RingViewer.tsx:17`
+- Modify: `src/components/builder/RingDesigner.tsx:321` (`customizer-container` → `designer-root`)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -209,6 +210,8 @@ h3 {
 - [ ] **Step 3: Delete the moved rules from `wizard.css`**
 
 Delete lines 843–868 — the `/* Studio backdrop for the ring stage... */` comment block, `.ring-stage-bg`, its `@media (min-width: 641px)` override, and the `/* ── 3D designer container ── */` comment with `.customizer-container`. The file must end at `.jos-state-header { padding: 0.85em 1em !important; }` and its closing brace.
+
+`.customizer-container` is renamed `.designer-root` in `designer.css`, so its only consumer must be updated in the same task or the designer container silently loses `position: fixed` and every absolutely-positioned child reparents. Change `RingDesigner.tsx:321` from `className="customizer-container"` to `className="designer-root"`. (`.designer-root` sets a sand background where the old rule set white; the studio backdrop covers it, so this is not visible.)
 
 - [ ] **Step 4: Add the viewport export and stylesheet import to `layout.tsx`**
 
@@ -2702,17 +2705,15 @@ Guard `onPointerDown` with `if (isWide) return;`, skip the `applyOffset` calls i
 
 - [ ] **Step 3: Size the stage and the dialog for wide viewports**
 
-In `RingStage.tsx`, the stage takes the full height beside the panel rather than the height above the sheet:
+In `RingStage.tsx`, the stage takes the full height beside the panel rather than the height above the sheet. The mobile height **must move off the inline `style` and into a custom property** — an inline `height` beats any class, so `md:h-full` could never override it. Replace the wrapper's `className` and `style` with exactly:
 
 ```tsx
 <div
-  className="relative shrink-0 md:h-full md:w-[calc(100%-360px)]"
-  style={{ height: "calc(var(--app-h) - var(--peek-h))" }}
+  className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-360px)]"
+  style={{ "--stage-h": "calc(var(--app-h) - var(--peek-h))" } as React.CSSProperties}
   onPointerDown={dismissHint}
 >
 ```
-
-Tailwind's `md:h-full` must win over the inline `height`, which it cannot — inline styles beat classes. So move the mobile height into a CSS custom property instead: set `style={{ "--stage-h": "calc(var(--app-h) - var(--peek-h))" } as React.CSSProperties}` and use `className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-360px)]"`.
 
 Also give `DesignerShell`'s root `md:flex-row` so the stage and panel sit side by side.
 
