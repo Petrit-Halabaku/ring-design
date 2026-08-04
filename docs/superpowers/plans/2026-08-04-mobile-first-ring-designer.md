@@ -40,7 +40,7 @@
 | `src/styles/wizard.css` | *modify* — delete `.ring-stage-bg` and `.customizer-container` only |
 | `src/lib/designer/types.ts` | *create* — `Control`, `ControlGroup`, `Category`, `DiamondType` |
 | `src/lib/designer/useRingConfig.ts` | *create* — all ring state, named fields, derived values |
-| `src/lib/designer/useVisualViewport.ts` | *create* — publishes `--app-h` from `visualViewport.height` |
+| `src/lib/designer/useVisualViewport.ts` | *create* — publishes `--app-h` (visual, keyboard-tracking) and `--layout-h` (stable) |
 | `src/lib/designer/categories.ts` | *create* — builds the five categories from config + settings |
 | `src/lib/designer/shareCodec.ts` | *create* — config ⇄ URL hash (Task 7, cuttable) |
 | `src/components/designer/DesignerShell.tsx` | *create* — composes stage + top bar + sheet |
@@ -160,9 +160,15 @@ h3 {
   background: var(--color-sand-200);
   overscroll-behavior: none;
 
-  /* Fallbacks until JS measures. --app-h is overwritten on mount. */
+  /*
+   * Fallbacks until JS measures; both are overwritten on mount.
+   * --app-h follows the keyboard and drives sheet position only.
+   * --layout-h ignores the keyboard and drives stage height + --peek-h, so focusing the
+   * engraving field can never resize the WebGL canvas.
+   */
   --app-h: 100dvh;
-  --peek-h: 320px;
+  --layout-h: 100dvh;
+  --peek-h: clamp(240px, calc(var(--layout-h) * 0.38), 420px);
   --rail-h: 76px;
   --sheet-full-h: 480px;
   --sheet-y: 0px;
@@ -1517,7 +1523,7 @@ Replaces the floating accordion stack with the real layout: a stage sized from m
 
 **Interfaces:**
 - Consumes: `useRingConfig`, `buildCategories`, `ControlGroup` from Tasks 2–3.
-- Produces: `useVisualViewport(ref) → { appH: number }` which writes `--app-h`; `<DesignerShell shapeId? carat? />`; `<CategoryRail categories activeId onSelect railRef />`; `SceneProps.recenterSignal?: number`.
+- Produces: `useVisualViewport(ref) → { appH: number; layoutH: number }` which writes `--app-h` and `--layout-h`; `<DesignerShell shapeId? carat? />`; `<CategoryRail categories activeId onSelect railRef />`; `SceneProps.recenterSignal?: number`.
 
 - [ ] **Step 1: Create `src/lib/designer/useVisualViewport.ts`**
 
@@ -1527,16 +1533,22 @@ Replaces the floating accordion stack with the real layout: a stage sized from m
 import { useEffect, useState, type RefObject } from "react";
 
 /**
- * Publishes the *visual* viewport height as `--app-h` on the shell element.
+ * Publishes two viewport heights on the shell element. The separation is the whole point.
  *
- * The engraving field lives in a bottom-anchored fixed sheet, so on iOS the keyboard
- * covers it. The conventional fix, `interactiveWidget: "resizes-content"`, shrinks the
- * layout viewport and would resize the WebGL canvas on every focus. Measuring
- * visualViewport instead lets the sheet lift above the keyboard while the stage keeps
- * measuring 100dvh, so the canvas never resizes.
+ * The engraving field lives in a bottom-anchored fixed sheet, so on iOS the keyboard covers
+ * it. The conventional fix, `interactiveWidget: "resizes-content"`, shrinks the layout
+ * viewport and would resize the WebGL canvas on every focus.
+ *
+ *   --app-h     visualViewport.height — shrinks with the keyboard. Sheet position only.
+ *   --layout-h  window.innerHeight — ignores the keyboard. Stage height and --peek-h.
+ *
+ * Stage geometry must NEVER read --app-h. If it does, focusing the engraving field shrinks
+ * the stage and resizes the canvas, which is the exact failure this hook exists to prevent:
+ * on a 390x844 phone with the keyboard up, a stage sized from --app-h halves in height.
  */
 export function useVisualViewport(ref: RefObject<HTMLElement | null>) {
   const [appH, setAppH] = useState(0);
+  const [layoutH, setLayoutH] = useState(0);
 
   useEffect(() => {
     const el = ref.current;
@@ -1544,26 +1556,37 @@ export function useVisualViewport(ref: RefObject<HTMLElement | null>) {
 
     const vv = window.visualViewport;
 
-    const measure = () => {
+    /** Visual height — follows the keyboard. */
+    const measureVisual = () => {
       const h = vv?.height ?? window.innerHeight;
       el.style.setProperty("--app-h", `${Math.round(h)}px`);
       setAppH(h);
     };
 
-    measure();
+    /** Layout height — deliberately not subscribed to visualViewport resize. */
+    const measureLayout = () => {
+      const h = window.innerHeight;
+      el.style.setProperty("--layout-h", `${Math.round(h)}px`);
+      setLayoutH(h);
+      measureVisual();
+    };
 
-    vv?.addEventListener("resize", measure);
-    vv?.addEventListener("scroll", measure);
-    window.addEventListener("orientationchange", measure);
+    measureLayout();
+
+    vv?.addEventListener("resize", measureVisual);
+    vv?.addEventListener("scroll", measureVisual);
+    window.addEventListener("orientationchange", measureLayout);
+    window.addEventListener("resize", measureLayout);
 
     return () => {
-      vv?.removeEventListener("resize", measure);
-      vv?.removeEventListener("scroll", measure);
-      window.removeEventListener("orientationchange", measure);
+      vv?.removeEventListener("resize", measureVisual);
+      vv?.removeEventListener("scroll", measureVisual);
+      window.removeEventListener("orientationchange", measureLayout);
+      window.removeEventListener("resize", measureLayout);
     };
   }, [ref]);
 
-  return { appH };
+  return { appH, layoutH };
 }
 ```
 
@@ -1662,7 +1685,8 @@ const HINT_KEY = "designer-rotate-hint-seen";
  * The canvas is transparent, so the studio sweep behind it shows through instead of a
  * colour being drawn in WebGL — the same arrangement the vendor's `.wrapper` rule uses.
  *
- * Height comes from --app-h minus --peek-h, both px values written from JS. It is
+ * Height comes from --layout-h minus --peek-h, both px written from JS. --layout-h ignores
+ * the keyboard on purpose; using --app-h here would resize the canvas on every field focus. It is
  * deliberately independent of the sheet's live drag position: resizing a WebGL canvas
  * mid-gesture drops frames.
  */
@@ -1685,7 +1709,7 @@ export default function RingStage({
   return (
     <div
       className="relative shrink-0"
-      style={{ height: "calc(var(--app-h) - var(--peek-h))" }}
+      style={{ height: "calc(var(--layout-h) - var(--peek-h))" }}
       onPointerDown={dismissHint}
     >
       <div className="ring-stage-bg absolute inset-0" />
@@ -1762,7 +1786,7 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
                 active ? "text-ink-900" : "text-ink-600"
               }`}
             >
-              <span aria-hidden className={active ? "text-champagne-500" : "text-ink-400"}>
+              <span aria-hidden className={active ? "text-ink-900" : "text-ink-400"}>
                 {c.icon}
               </span>
               {c.label}
@@ -1875,7 +1899,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
 }
 ```
 
-Add a `--peek-h` definition to `.designer-root` in `designer.css` so it resolves before Task 5's JS takes over — replace the `--peek-h: 320px;` fallback with `--peek-h: clamp(240px, calc(var(--app-h) * 0.38), 420px);`.
+`--peek-h` is already defined in `designer.css` as `clamp(240px, calc(var(--layout-h) * 0.38), 420px)`. Derive it from `--layout-h`, never `--app-h` — the stage height subtracts it, so a keyboard-dependent peek makes the canvas resize.
 
 - [ ] **Step 8: Point `CustomRingBuilder` at the shell**
 
@@ -1899,7 +1923,7 @@ Run `npm run dev` at 390×844:
 4. Focus the rail with Tab, then press ArrowRight / ArrowLeft — the active category moves and only the active tab is tabbable.
 5. "Drag to rotate · pinch to zoom" appears on first load and disappears on first touch of the stage; reload in the same tab and it stays gone.
 6. In DevTools, add `env(safe-area-inset-*)` emulation (or test on an iPhone): nothing sits under the notch or the home indicator.
-7. Tap the engraving field — the panel content scrolls and the field is reachable above the keyboard. Confirm `--app-h` shrinks in the computed styles of `.designer-root` and the canvas element's height does **not** change.
+7. Tap the engraving field. Confirm in computed styles on `.designer-root` that `--app-h` **shrinks** while `--layout-h` and `--peek-h` stay **unchanged**, and that the canvas element's pixel height does **not** change. This is the check that catches the canvas-resize regression.
 
 - [ ] **Step 11: Commit**
 
@@ -2023,12 +2047,14 @@ export default function OptionSheet({ categories, activeId, onSelect, footer }: 
     const root = sheet?.closest<HTMLElement>(".designer-root");
     if (!sheet || !root) return;
 
-    const appH =
-      parseFloat(getComputedStyle(root).getPropertyValue("--app-h")) ||
-      window.innerHeight;
+    const cs = getComputedStyle(root);
+    const appH = parseFloat(cs.getPropertyValue("--app-h")) || window.innerHeight;
+    // Peek is derived from the STABLE height so the stage (which subtracts it) never
+    // resizes when the keyboard opens. Only the sheet's own extent may follow --app-h.
+    const layoutH = parseFloat(cs.getPropertyValue("--layout-h")) || window.innerHeight;
 
     const railH = railRef.current?.offsetHeight ?? 76;
-    const peekH = Math.min(420, Math.max(240, appH * 0.38));
+    const peekH = Math.min(420, Math.max(240, layoutH * 0.38));
     const fullH = Math.max(peekH, appH - 88);
 
     geo.current = { railH, peekH, fullH };
@@ -2712,7 +2738,7 @@ In `RingStage.tsx`, the stage takes the full height beside the panel rather than
 ```tsx
 <div
   className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-360px)]"
-  style={{ "--stage-h": "calc(var(--app-h) - var(--peek-h))" } as React.CSSProperties}
+  style={{ "--stage-h": "calc(var(--layout-h) - var(--peek-h))" } as React.CSSProperties}
   onPointerDown={dismissHint}
 >
 ```
