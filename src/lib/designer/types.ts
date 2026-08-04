@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { BandFit, BandStyle } from "@/lib/settings/bandGeometry";
 import type { BandPaveLength } from "@/lib/settings/bandPave";
 import type { BasketHaloId } from "@/lib/settings/basketHalo";
@@ -34,4 +35,50 @@ export type RingValue = {
   engravingFont: EngravingFont;
   engravingText: string;
   surpriseStones: boolean;
+};
+
+export type SwatchOption = { id: string; label: string; hex: string };
+export type IconOption = { id: string; label: string; svg: string };
+export type TextOption = { id: string; label: string };
+
+/**
+ * The render discriminant. The previous schema was `{ label, choices: { label }[] }`,
+ * which could only describe text chips — which is exactly why a metal colour and a
+ * diamond shape rendered identically.
+ */
+export type Control =
+  | { kind: "swatch"; options: SwatchOption[]; value: string; onChange: (id: string) => void }
+  | { kind: "shape"; options: IconOption[]; value: string; onChange: (id: string) => void }
+  | { kind: "chip"; options: TextOption[]; value: string; onChange: (id: string) => void }
+  | { kind: "segmented"; options: TextOption[]; value: string; onChange: (id: string) => void }
+  | { kind: "switch"; value: boolean; onChange: (next: boolean) => void }
+  | {
+      kind: "range";
+      min: number;
+      max: number;
+      step: number;
+      value: number;
+      presets?: number[];
+      format: (n: number) => string;
+      onChange: (next: number) => void;
+    }
+  | {
+      kind: "text";
+      maxLength: number;
+      value: string;
+      onChange: (next: string) => void;
+    };
+
+export type ControlGroupModel = {
+  id: string;
+  label: string;
+  hint?: string;
+  control: Control;
+};
+
+export type Category = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  groups: ControlGroupModel[];
 };

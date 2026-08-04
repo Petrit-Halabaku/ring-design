@@ -61,3 +61,54 @@
     animation-duration: 2s;
   }
 }
+
+.designer-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 44px;
+  background: transparent;
+  touch-action: pan-y;
+}
+
+.designer-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-sand-300);
+}
+
+.designer-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -12px;
+  border: 1px solid var(--color-line);
+  border-radius: 50%;
+  background: var(--color-sand-50);
+  box-shadow: var(--shadow-card);
+}
+
+.designer-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-sand-300);
+}
+
+.designer-range::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-line);
+  border-radius: 50%;
+  background: var(--color-sand-50);
+  box-shadow: var(--shadow-card);
+}
+
+.designer-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-champagne-500);
+  outline-offset: 2px;
+}
+
+.designer-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-champagne-500);
+  outline-offset: 2px;
+}

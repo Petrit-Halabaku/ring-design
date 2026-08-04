@@ -63,3 +63,7 @@ export const SHAPE_TO_STONE_NAME: Record<string, string> = {
   pear: "Pear",
   radiant: "Radiant",
 };
+
+export const STONE_NAME_TO_SHAPE: Record<string, string> = Object.fromEntries(
+  Object.entries(SHAPE_TO_STONE_NAME).map(([shape, name]) => [name, shape]),
+);
