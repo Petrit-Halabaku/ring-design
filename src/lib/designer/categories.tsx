@@ -6,7 +6,15 @@ import { BASKET_HALOS } from "@/lib/settings/basketHalo";
 import { PRONG_TIPS } from "@/lib/settings/prongs";
 import { STONE_NAME_TO_SHAPE } from "@/lib/settings/models";
 import type { RingConfig } from "./useRingConfig";
-import type { Category, TextOption } from "./types";
+import {
+  metalColourOptions,
+  parseMetalUiValue,
+  resolveMetalByColour,
+  resolveMetalByKarat,
+  type MetalColourId,
+  type MetalKaratId,
+} from "./metalSelection";
+import type { Category, ControlGroupModel, TextOption } from "./types";
 
 const ct = (n: number) => `${n.toFixed(2)} ct`;
 const mm = (n: number) => `${n.toFixed(1)} mm`;
@@ -45,30 +53,58 @@ const ICONS: Record<string, React.ReactNode> = {
 
 export function buildCategories(cfg: RingConfig): Category[] {
   const { settings, stones, stone, metal, prongMetal, caratRange, value, set } = cfg;
+  const { colour, karat } = parseMetalUiValue(metal.uiValue);
+
+  const metalGroups: ControlGroupModel[] = [
+    {
+      id: "metal-color",
+      label: "Head & Band Colour",
+      hint: metal.description,
+      control: {
+        kind: "swatch",
+        options: metalColourOptions(settings.metals),
+        value: colour,
+        onChange: (id) => {
+          const uiValue = resolveMetalByColour(
+            settings.metals,
+            id as MetalColourId,
+            metal.uiValue,
+          );
+          set.setMetalIdx(settings.metals.findIndex((m) => m.uiValue === uiValue));
+        },
+      },
+    },
+  ];
+
+  if (karat) {
+    metalGroups.push({
+      id: "metal-karat",
+      label: "Karat",
+      control: {
+        kind: "segmented",
+        options: [
+          { id: "14K", label: "14K" },
+          { id: "18K", label: "18K" },
+        ],
+        value: karat,
+        onChange: (id) => {
+          const uiValue = resolveMetalByKarat(
+            settings.metals,
+            id as MetalKaratId,
+            metal.uiValue,
+          );
+          set.setMetalIdx(settings.metals.findIndex((m) => m.uiValue === uiValue));
+        },
+      },
+    });
+  }
 
   return [
     {
       id: "metal",
       label: "Metal",
       icon: ICONS.metal,
-      groups: [
-        {
-          id: "metal-color",
-          label: "Head & Band Colour",
-          hint: metal.description,
-          control: {
-            kind: "swatch",
-            options: settings.metals.map((m) => ({
-              id: m.uiValue,
-              label: m.uiValue,
-              hex: m.backgroundColor,
-            })),
-            value: metal.uiValue,
-            onChange: (id) =>
-              set.setMetalIdx(settings.metals.findIndex((m) => m.uiValue === id)),
-          },
-        },
-      ],
+      groups: metalGroups,
     },
     {
       id: "stone",

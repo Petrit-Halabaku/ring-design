@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element -- brand mark from /public, sized by CSS */
 "use client";
 
 type Props = {
@@ -7,7 +6,7 @@ type Props = {
 };
 
 /**
- * Stage controls: wordmark, recentre, share.
+ * Stage controls: recentre, share.
  *
  * The bar spans only the stage, not the whole shell. At >=768px the options become a fixed
  * right-hand panel starting at y=0, so a full-width bar laid over the top of it and clipped
@@ -16,11 +15,9 @@ type Props = {
 export default function TopBar({ onRecenter, onShare }: Props) {
   return (
     <header
-      className="absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 border-b border-line/40 bg-sand-200/70 px-3 backdrop-blur-md md:right-[var(--panel-w)]"
+      className="absolute inset-x-0 top-0 z-20 flex items-center justify-end gap-3 border-b border-line/40 bg-sand-200/70 px-3 backdrop-blur-md md:right-[var(--panel-w)]"
       style={{ paddingTop: "env(safe-area-inset-top)", minHeight: "52px" }}
     >
-      <img src="/brand/casale-logo.webp" alt="Casale Jewelers" className="h-6 w-auto" />
-
       <div className="flex items-center">
         <button
           type="button"
