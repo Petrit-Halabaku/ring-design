@@ -1185,7 +1185,7 @@ export function buildCategories(cfg: RingConfig): Category[] {
             options: settings.metals.map((m) => ({
               id: m.uiValue,
               label: m.uiValue,
-              hex: m.swatchColor ?? m.material.color,
+              hex: m.backgroundColor,
             })),
             value: metal.uiValue,
             onChange: (id) =>
@@ -1301,7 +1301,7 @@ export function buildCategories(cfg: RingConfig): Category[] {
               ...settings.metals.map((m) => ({
                 id: m.uiValue,
                 label: m.uiValue,
-                hex: m.swatchColor ?? m.material.color,
+                hex: m.backgroundColor,
               })),
             ],
             value: value.prongMetalIdx === null ? MATCH_BAND : prongMetal.uiValue,
@@ -1450,7 +1450,9 @@ export const STONE_NAME_TO_SHAPE: Record<string, string> = Object.fromEntries(
 );
 ```
 
-Also confirm the field name for a metal's swatch colour before using `m.swatchColor` — check `src/lib/settings/types.ts` and `snapshot/colors.json`. The README calls it "hex colour and swatch colour"; if the field is named differently, use the real name and drop the `??` fallback if it is always present.
+3. **The swatch colour field is `backgroundColor`** — resolved, not a guess: `settings/types.ts:42` declares `backgroundColor: string` and there is no `swatchColor`. Use it directly; it is always present, so no fallback is needed.
+
+   This matters beyond naming. `material.color` is the *render* colour passed to the 3D material, and for 14K White Gold it is `#ffffff` — building swatches from it would draw white gold as an invisible circle on the sand sheet. `backgroundColor` is the intended swatch value (`#B0B0B0` for white, `#F4AA3C` for yellow). Use `material.color` only where the 3D scene needs it, never for a swatch.
 
 - [ ] **Step 11: Render the new controls inside the existing accordion**
 
