@@ -1,0 +1,176 @@
+/*
+ * Ring designer shell. Deliberately independent of wizard.css — the walkthrough is
+ * out of scope but its stylesheet stays loaded, so nothing here may reach into it.
+ *
+ * Geometry custom properties are written from JS (useVisualViewport, OptionSheet) as
+ * plain px values. CSS only consumes them, so the calc() chains stay resolvable and
+ * the canvas height never depends on the sheet's live drag position.
+ */
+
+.designer-root {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  z-index: 1003;
+  background: var(--color-sand-200);
+  overscroll-behavior: none;
+
+  /* Fallbacks until JS measures. --app-h and --layout-h are overwritten on mount. */
+  --app-h: 100dvh;
+  --layout-h: 100dvh;
+  --peek-h: clamp(240px, calc(var(--layout-h) * 0.38), 420px);
+  --rail-h: 76px;
+  --sheet-full-h: 480px;
+  /*
+   * Start at the peek offset, not 0. --sheet-y: 0 means the sheet is fully expanded, so the
+   * pre-hydration paint showed it covering the ring and then jumping down once JS measured —
+   * the app's first impression was a lurch. Peek is derivable in CSS, so the first paint can
+   * already be correct; JS overwrites this with exact px on mount.
+   */
+  --sheet-y: calc(var(--sheet-full-h) - var(--peek-h));
+
+  /* Width of the right-hand panel at >=768px. Single source of truth: the panel, the stage's
+     width, and the top bar's right edge all derive from it, so they cannot drift apart. */
+  --panel-w: 360px;
+}
+
+/*
+ * Studio backdrop for the ring stage. The vendor applies these on `.wrapper` for
+ * desktop and `.RingmobileContainer` for narrow layouts, from two separately
+ * compressed images.
+ */
+.ring-stage-bg {
+  background-image: url("/bg/bg-mobile.jpg");
+  background-position: bottom;
+  background-size: cover;
+}
+
+@media (min-width: 768px) {
+  .ring-stage-bg {
+    background-image: url("/bg/bg-desktop.jpg");
+  }
+}
+
+.designer-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-sand-100);
+  border-top-color: var(--color-ink-900);
+  border-radius: 50%;
+  animation: designer-spin 1s linear infinite;
+}
+
+@keyframes designer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .designer-spinner {
+    animation-duration: 2s;
+  }
+}
+
+.designer-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 44px;
+  background: transparent;
+  touch-action: pan-y;
+  /* Filled portion tracks the current value; set --range-pct on a parent. */
+  --range-fill: linear-gradient(
+    to right,
+    var(--color-ink-900) 0%,
+    var(--color-ink-900) var(--range-pct, 0%),
+    var(--color-sand-300) var(--range-pct, 0%),
+    var(--color-sand-300) 100%
+  );
+}
+
+.designer-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--range-fill);
+}
+
+.designer-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -12px;
+  border: 1px solid var(--color-line);
+  border-radius: 50%;
+  background: var(--color-sand-50);
+  box-shadow: var(--shadow-card);
+}
+
+.designer-range::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--range-fill);
+}
+
+.designer-range::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--color-line);
+  border-radius: 50%;
+  background: var(--color-sand-50);
+  box-shadow: var(--shadow-card);
+}
+
+.designer-range:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-champagne-500);
+  outline-offset: 2px;
+}
+
+.designer-range:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-champagne-500);
+  outline-offset: 2px;
+}
+
+/*
+ * The sheet is always its full height and slid down by --sheet-y, so only the wanted
+ * amount shows. JS owns all four geometry values in px; CSS just consumes them. That
+ * keeps the calc() chains resolvable and means the canvas height (which reads --peek-h,
+ * a constant) is unaffected by the live drag position.
+ */
+.designer-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  height: var(--sheet-full-h);
+  transform: translate3d(0, var(--sheet-y), 0);
+  transition: transform 320ms var(--ease-sheet);
+  will-change: transform;
+}
+
+.designer-sheet[data-dragging="true"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .designer-sheet {
+    transition-duration: 0ms;
+  }
+}
+
+@media (min-width: 768px) {
+  /* The sheet becomes a static right-hand panel: no transform, no drag. */
+  .designer-sheet {
+    top: 0;
+    left: auto;
+    width: var(--panel-w);
+    height: 100%;
+    border-left: 1px solid var(--color-line);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    transform: none;
+    transition: none;
+  }
+}

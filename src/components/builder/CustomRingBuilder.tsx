@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import LoadingScreen from "./LoadingScreen";
-import RingDesigner from "./RingDesigner";
+import DesignerShell from "@/components/designer/DesignerShell";
 import RingWizard, { type WizardResult } from "./RingWizard";
 
 type Phase = "wizard" | "loading" | "designer";
@@ -20,11 +20,11 @@ export default function CustomRingBuilder() {
 
   return (
     <>
-      {phase === "wizard" && <RingWizard onComplete={toLoading} />}
+      {/* {phase === "wizard" && <RingWizard onComplete={toLoading} />}
       {phase === "loading" && <LoadingScreen onDone={toDesigner} />}
-      {phase === "designer" && (
-        <RingDesigner shapeId={picked.shapeId} carat={picked.carat} />
-      )}
+      {phase === "designer" && ( */}
+        <DesignerShell shapeId={picked.shapeId} carat={picked.carat} />
+      {/* )} */}
     </>
   );
 }

@@ -1,1 +1,100 @@
-[{"_id":"669162f9f1b607ba5666573c","name":"White Gold 14K","material":{"color":"#ffffff"},"type":"Prong","backgroundColor":"#B0B0B0","uiValue":"14K White","description":"14K White Gold","createdAt":"2024-02-05T14:33:30.743Z","updatedAt":"2024-02-05T14:33:30.743Z","__v":0},{"_id":"66916309f1b607ba5666573d","name":"Yellow Gold 14K","material":{"color":"#ffcb7d"},"type":"Prong","backgroundColor":"#F4AA3C","uiValue":"14K Yellow","description":"14K Yellow Gold","createdAt":"2024-02-05T14:34:18.987Z","updatedAt":"2024-02-05T14:34:18.987Z","__v":0},{"_id":"669162c4f1b607ba5666573a","name":"Rose Gold 14K","material":{"color":"#fcb083"},"type":"Prong","backgroundColor":"#FF8841","uiValue":"14K Rose","description":"14K Rose Gold","createdAt":"2024-02-05T14:33:48.626Z","updatedAt":"2024-02-05T14:33:48.626Z","__v":0},{"_id":"6691631ff1b607ba5666573f","name":"White Gold 18K","material":{"color":"#ffffff"},"type":"Prong","backgroundColor":"#B0B0B0","uiValue":"18K White","description":"18K White Gold","createdAt":"2024-02-05T14:34:06.117Z","updatedAt":"2024-02-05T14:34:06.117Z","__v":0},{"_id":"66916240f1b607ba56665739","name":"Yellow Gold 18K","material":{"color":"#ffcb7d"},"type":"Prong","backgroundColor":"#F4AA3C","uiValue":"18K Yellow","description":"18K Yellow Gold","createdAt":"2024-02-05T14:33:41.074Z","updatedAt":"2024-02-05T14:33:41.074Z","__v":0},{"_id":"66916315f1b607ba5666573e","name":"Rose Gold 18K","material":{"color":"#fcb083"},"type":"Prong","backgroundColor":"#FF8841","uiValue":"18K Rose","description":"18K Rose Gold","createdAt":"2024-02-05T14:34:00.213Z","updatedAt":"2024-02-05T14:34:00.213Z","__v":0},{"_id":"669162e6f1b607ba5666573b","name":"Platinum","material":{"color":"#ffffff"},"type":"Prong","backgroundColor":"#B0B0B0","uiValue":"Platinum","description":"Platinum","createdAt":"2024-02-05T14:34:20.145Z","updatedAt":"2024-02-05T14:34:20.145Z","__v":0}]
+[
+  {
+    "_id": "669162f9f1b607ba5666573c",
+    "name": "White Gold 14K",
+    "material": {
+      "color": "#ffffff"
+    },
+    "type": "Prong",
+    "backgroundColor": "#B0B0B0",
+    "uiValue": "14K White",
+    "description": "14K White Gold",
+    "createdAt": "2024-02-05T14:33:30.743Z",
+    "updatedAt": "2024-02-05T14:33:30.743Z",
+    "__v": 0
+  },
+  {
+    "_id": "66916309f1b607ba5666573d",
+    "name": "Yellow Gold 14K",
+    "material": {
+      "color": "#ffcb7d"
+    },
+    "type": "Prong",
+    "backgroundColor": "#F4AA3C",
+    "uiValue": "14K Yellow",
+    "description": "14K Yellow Gold",
+    "createdAt": "2024-02-05T14:34:18.987Z",
+    "updatedAt": "2024-02-05T14:34:18.987Z",
+    "__v": 0
+  },
+  {
+    "_id": "669162c4f1b607ba5666573a",
+    "name": "Rose Gold 14K",
+    "material": {
+      "color": "#fcb083"
+    },
+    "type": "Prong",
+    "backgroundColor": "#FF8841",
+    "uiValue": "14K Rose",
+    "description": "14K Rose Gold",
+    "createdAt": "2024-02-05T14:33:48.626Z",
+    "updatedAt": "2024-02-05T14:33:48.626Z",
+    "__v": 0
+  },
+  {
+    "_id": "6691631ff1b607ba5666573f",
+    "name": "White Gold 18K",
+    "material": {
+      "color": "#ffffff"
+    },
+    "type": "Prong",
+    "backgroundColor": "#B0B0B0",
+    "uiValue": "18K White",
+    "description": "18K White Gold",
+    "createdAt": "2024-02-05T14:34:06.117Z",
+    "updatedAt": "2024-02-05T14:34:06.117Z",
+    "__v": 0
+  },
+  {
+    "_id": "66916240f1b607ba56665739",
+    "name": "Yellow Gold 18K",
+    "material": {
+      "color": "#ffcb7d"
+    },
+    "type": "Prong",
+    "backgroundColor": "#F4AA3C",
+    "uiValue": "18K Yellow",
+    "description": "18K Yellow Gold",
+    "createdAt": "2024-02-05T14:33:41.074Z",
+    "updatedAt": "2024-02-05T14:33:41.074Z",
+    "__v": 0
+  },
+  {
+    "_id": "66916315f1b607ba5666573e",
+    "name": "Rose Gold 18K",
+    "material": {
+      "color": "#fcb083"
+    },
+    "type": "Prong",
+    "backgroundColor": "#FF8841",
+    "uiValue": "18K Rose",
+    "description": "18K Rose Gold",
+    "createdAt": "2024-02-05T14:34:00.213Z",
+    "updatedAt": "2024-02-05T14:34:00.213Z",
+    "__v": 0
+  },
+  {
+    "_id": "669162e6f1b607ba5666573b",
+    "name": "Platinum",
+    "material": {
+      "color": "#ffffff"
+    },
+    "type": "Prong",
+    "backgroundColor": "#B0B0B0",
+    "uiValue": "Platinum",
+    "description": "Platinum",
+    "createdAt": "2024-02-05T14:34:20.145Z",
+    "updatedAt": "2024-02-05T14:34:20.145Z",
+    "__v": 0
+  }
+]

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Diamond">
+  <!--
+    Brilliant-cut silhouette. Two tones rather than outlines: at 16px a stroked gem collapses
+    into a smudge, whereas a light crown over a darker pavilion still reads as a faceted stone.
+    Champagne is used instead of the app's near-black ink so the icon stays visible against
+    both light and dark browser tab bars.
+  -->
+  <path d="M10 5h12l8 8H2z" fill="#c0a26a" />
+  <path d="M2 13h28L16 29z" fill="#8a6b3a" />
+  <!-- Crown facets, drawn in the pavilion tone so they read as creases, not lines. -->
+  <path d="M10 5 6.5 13M22 5l3.5 8M10 5l6 8M22 5l-6 8" stroke="#8a6b3a" stroke-width="1.1" fill="none" />
+  <!-- Pavilion facets converging on the culet. -->
+  <path d="M9 13l7 16M23 13l-7 16" stroke="#6f5931" stroke-width="1.1" fill="none" opacity=".55" />
+</svg>

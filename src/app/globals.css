@@ -12,6 +12,43 @@
   --font-serif: var(--font-lora);
 }
 
+@theme {
+  /* Surfaces. sand-200 is the vendor's stage colour (wizard.css:10). */
+  --color-sand-50: #f7f7f4;
+  --color-sand-100: #eeeeea;
+  --color-sand-200: #e4e5de;
+  --color-sand-300: #d5d6cd;
+  --color-line: #cfd0c7;
+
+  /* Ink. ink-900 is the vendor's near-black (wizard.css:76).
+     ink-400 is ~2.6:1 on sand-200 — decorative/disabled only. */
+  --color-ink-900: #1c1d1e;
+  --color-ink-600: #56574f;
+  --color-ink-400: #8a8b82;
+
+  /*
+   * Accent. Primary CTA and the rail's active indicator, nothing else.
+   *
+   * Deepened from the originally specified #a3854f, which was an accessibility failure:
+   * sand-50 text on it measured 3.25:1, and the CTA labels are 15px — normal-size text
+   * needing 4.5:1 under WCAG AA. #8a6b3a measures 4.61:1 for the same text, and also lifts
+   * the focus ring and rail underline (non-text UI, 3:1 minimum) from 3.25 to 4.61.
+   */
+  --color-champagne-500: #8a6b3a;
+  --color-champagne-100: #f0e7d6;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-sheet: 24px;
+
+  /* Warm-tinted elevation — never pure black. */
+  --shadow-card: 0 1px 2px rgb(28 29 30 / 0.06), 0 4px 12px -4px rgb(28 29 30 / 0.08);
+  --shadow-sheet: 0 -8px 32px -8px rgb(28 29 30 / 0.16);
+
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
