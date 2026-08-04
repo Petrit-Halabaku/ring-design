@@ -1297,7 +1297,7 @@ export function buildCategories(cfg: RingConfig): Category[] {
           control: {
             kind: "swatch",
             options: [
-              { id: MATCH_BAND, label: "Match Band", hex: metal.material.color },
+              { id: MATCH_BAND, label: "Match Band", hex: metal.backgroundColor },
               ...settings.metals.map((m) => ({
                 id: m.uiValue,
                 label: m.uiValue,
