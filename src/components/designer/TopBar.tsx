@@ -3,6 +3,8 @@
 type Props = {
   onRecenter: () => void;
   onShare?: () => void;
+  /** Transient confirmation ("Link copied"), or null when nothing to report. */
+  shareStatus?: string | null;
 };
 
 /**
@@ -12,12 +14,26 @@ type Props = {
  * right-hand panel starting at y=0, so a full-width bar laid over the top of it and clipped
  * the category rail. `md:right-[var(--panel-w)]` stops the bar where the panel begins.
  */
-export default function TopBar({ onRecenter, onShare }: Props) {
+export default function TopBar({ onRecenter, onShare, shareStatus }: Props) {
   return (
     <header
       className="absolute inset-x-0 top-0 z-20 flex items-center justify-end gap-3 border-b border-line/40 bg-sand-200/70 px-3 backdrop-blur-md md:right-[var(--panel-w)]"
       style={{ paddingTop: "env(safe-area-inset-top)", minHeight: "52px" }}
     >
+      {/*
+        Confirmation for the share control. It is an icon button with no room for a label, so
+        a successful copy was previously indistinguishable from a dead button. role="status"
+        announces it to screen readers as well, since the same press has no other outcome.
+      */}
+      {shareStatus && (
+        <span
+          role="status"
+          className="rounded-full bg-ink-900 px-2.5 py-1 text-[13px] text-sand-50"
+        >
+          {shareStatus}
+        </span>
+      )}
+
       <div className="flex items-center">
         <button
           type="button"
