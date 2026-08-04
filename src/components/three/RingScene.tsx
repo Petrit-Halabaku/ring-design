@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useDeferredValue, useLayoutEffect, useMemo } from "react";
+import { useEffect, useRef, Suspense, useDeferredValue, useLayoutEffect, useMemo, type ComponentRef } from "react";
 import { Canvas, useLoader, useThree } from "@react-three/fiber";
 import {
   MeshRefractionMaterial,
@@ -216,6 +216,8 @@ export type SceneProps = {
   /** Melee set into the band's shoulders. */
   bandPave?: boolean;
   bandPaveLength?: BandPaveLength;
+  /** Signal to reset the camera to its initial position. */
+  recenterSignal?: number;
 };
 
 /**
@@ -1798,7 +1800,17 @@ export default function RingScene({
   surpriseStones = false,
   bandPave = false,
   bandPaveLength = "Half",
+  recenterSignal,
 }: SceneProps) {
+  const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
+
+  // A touch 3D viewer with no way to undo a bad rotation is a dead end. `reset()` restores
+  // the camera and target OrbitControls captured on mount, which are the values in the
+  // <Canvas camera> and <OrbitControls target> props below.
+  useEffect(() => {
+    if (recenterSignal) controlsRef.current?.reset();
+  }, [recenterSignal]);
+
   const head = useHeadLayout(
     stone,
     carat,
@@ -1983,6 +1995,7 @@ export default function RingScene({
       </Suspense>
 
       <OrbitControls
+        ref={controlsRef}
         makeDefault
         enablePan={false}
         target={[0, 2, 0]}

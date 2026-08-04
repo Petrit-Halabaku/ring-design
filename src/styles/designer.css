@@ -18,7 +18,7 @@
 
   /* Fallbacks until JS measures. --app-h is overwritten on mount. */
   --app-h: 100dvh;
-  --peek-h: 320px;
+  --peek-h: clamp(240px, calc(var(--app-h) * 0.38), 420px);
   --rail-h: 76px;
   --sheet-full-h: 480px;
   --sheet-y: 0px;
