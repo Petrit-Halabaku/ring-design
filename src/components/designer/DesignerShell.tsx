@@ -5,6 +5,7 @@ import { localModelUrl } from "@/lib/settings/models";
 import { prongTipModel } from "@/lib/settings/prongs";
 import { buildCategories } from "@/lib/designer/categories";
 import { useRingConfig, type RingConfigInit } from "@/lib/designer/useRingConfig";
+import type { RingShots } from "@/lib/designer/types";
 import { encodeConfig } from "@/lib/designer/shareCodec";
 import { useVisualViewport } from "@/lib/designer/useVisualViewport";
 import OptionSheet from "./OptionSheet";
@@ -23,11 +24,11 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
   const [recenterSignal, setRecenterSignal] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [captureSignal, setCaptureSignal] = useState(0);
-  const [shot, setShot] = useState<string | null>(null);
+  const [shots, setShots] = useState<RingShots | null>(null);
   const [shareLabel, setShareLabel] = useState("Copy design link");
 
   const openReview = useCallback(() => {
-    setShot(null);
+    setShots(null);
     setCaptureSignal((n) => n + 1);
     setReviewOpen(true);
   }, []);
@@ -61,10 +62,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
   // Debounced because dragging the carat slider fires on every step and would otherwise
   // flood the live region with dozens of partial announcements.
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setAnnouncement(describeRing);
-    }, 400);
+    const t = window.setTimeout(() => setAnnouncement(describeRing), 400);
     return () => window.clearTimeout(t);
   }, [describeRing]);
 
@@ -106,7 +104,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
         bandPaveLength={value.bandPaveLength}
         recenterSignal={recenterSignal}
         captureSignal={captureSignal}
-        onCapture={setShot}
+        onCapture={setShots}
       />
 
       <OptionSheet
@@ -127,7 +125,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
       <ReviewSheet
         open={reviewOpen}
         categories={categories}
-        imageUrl={shot}
+        shots={shots}
         onClose={() => setReviewOpen(false)}
         onShare={share}
         shareLabel={shareLabel}

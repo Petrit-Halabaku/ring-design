@@ -2,12 +2,24 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Category } from "@/lib/designer/types";
+import {
+  RING_VIEWS,
+  type Category,
+  type RingShots,
+  type RingView,
+} from "@/lib/designer/types";
+
+const VIEW_LABELS: Record<RingView, string> = {
+  front: "Front",
+  side: "Side",
+  top: "Top",
+  bottom: "Bottom",
+};
 
 type Props = {
   open: boolean;
   categories: Category[];
-  imageUrl: string | null;
+  shots: RingShots | null;
   onClose: () => void;
   onShare?: () => void;
   shareLabel?: string;
@@ -33,7 +45,7 @@ function readValue(c: Category["groups"][number]["control"]): string {
 export default function ReviewSheet({
   open,
   categories,
-  imageUrl,
+  shots,
   onClose,
   onShare,
   shareLabel = "Copy design link",
@@ -87,7 +99,7 @@ export default function ReviewSheet({
         aria-label="Review your ring"
         ref={panelRef}
         tabIndex={-1}
-        className="flex flex-col bg-sand-50 md:h-auto md:max-h-[85vh] md:w-[640px] md:rounded-lg"
+        className="flex h-full flex-col bg-sand-50 md:h-auto md:max-h-[92vh] md:w-[min(1040px,94vw)] md:rounded-lg md:shadow-sheet"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
       <div className="flex min-h-[52px] shrink-0 items-center justify-between border-b border-line/60 px-3">
@@ -106,26 +118,35 @@ export default function ReviewSheet({
 
       <div className="min-h-0 flex-1 overflow-y-auto [overscroll-behavior:contain]">
         {/*
-          The image box keeps its height whether or not the still has arrived. `openReview`
-          batches the capture signal with opening the dialog, so the first committed render
-          always has `imageUrl` null and the capture lands a frame later. Rendering the <img>
-          conditionally without reserving its space reflowed the whole summary downward every
-          time the dialog opened.
+          Four orbit views in a grid. The boxes keep their size whether or not the captures
+          have arrived: `openReview` batches the capture signal with opening the dialog, so the
+          first committed render always has `shots` null and the images land a frame later.
+          Rendering them conditionally without reserving space reflowed the whole summary
+          downward every time the dialog opened.
         */}
-        <div className="grid h-[38vh] place-items-center">
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt="Your ring as configured"
-              className="max-h-[38vh] w-auto"
-            />
-          ) : (
-            <div
-              className="designer-spinner"
-              role="status"
-              aria-label="Rendering your ring"
-            />
-          )}
+        <div className="grid grid-cols-2 gap-2 px-4 pt-4 sm:grid-cols-4">
+          {RING_VIEWS.map((view) => (
+            <figure key={view} className="m-0">
+              <div className="grid aspect-square place-items-center overflow-hidden rounded-md border border-line/60 bg-sand-100">
+                {shots ? (
+                  <img
+                    src={shots[view]}
+                    alt={`${VIEW_LABELS[view]} view of your ring`}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div
+                    className="designer-spinner"
+                    role="status"
+                    aria-label="Rendering your ring"
+                  />
+                )}
+              </div>
+              <figcaption className="mt-1 text-center text-[13px] text-ink-600">
+                {VIEW_LABELS[view]}
+              </figcaption>
+            </figure>
+          ))}
         </div>
 
         <dl className="px-4 pb-4">

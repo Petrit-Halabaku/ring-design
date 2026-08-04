@@ -97,6 +97,41 @@ import {
   wedgeTipAngle,
 } from "@/lib/settings/prongGeometry";
 import type { Stone } from "@/lib/settings/types";
+import { RING_VIEWS, type RingShots, type RingView } from "@/lib/designer/types";
+
+/**
+ * What the camera orbits around. Shared by OrbitControls and the review capture so the
+ * captured views are framed on the same point the user has been rotating about.
+ */
+const CAMERA_TARGET: [number, number, number] = [0, 2, 0];
+
+/**
+ * Longest edge of a captured view, in px. The review sheet shows these as thumbnails, so
+ * exporting the canvas at full resolution would put four multi-megabyte data URLs in React
+ * state for no visible gain.
+ */
+const MAX_SHOT_PX = 512;
+
+/**
+ * Copies the WebGL canvas into a smaller 2D canvas and exports that. Must be called in the
+ * same synchronous task as the `gl.render` that produced the frame, for the same reason the
+ * direct `toDataURL` must be: the drawing buffer is not preserved between tasks.
+ *
+ * Stays PNG rather than JPEG because the canvas is alpha-blended over the studio backdrop —
+ * JPEG has no alpha and would render the transparent surround as solid black.
+ */
+function toScaledPng(source: HTMLCanvasElement): string {
+  const scale = Math.min(1, MAX_SHOT_PX / Math.max(source.width, source.height));
+  if (scale >= 1) return source.toDataURL("image/png");
+
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(source.width * scale));
+  out.height = Math.max(1, Math.round(source.height * scale));
+  const ctx = out.getContext("2d");
+  if (!ctx) return source.toDataURL("image/png");
+  ctx.drawImage(source, 0, 0, out.width, out.height);
+  return out.toDataURL("image/png");
+}
 
 /**
  * Rebuild of the configurator's render pipeline (react-three-fiber + drei).
@@ -221,7 +256,7 @@ export type SceneProps = {
   /** Signal to capture the canvas as a PNG data URL. */
   captureSignal?: number;
   /** Callback when canvas is captured. */
-  onCapture?: (dataUrl: string) => void;
+  onCapture?: (shots: RingShots) => void;
 };
 
 /**
@@ -1792,14 +1827,49 @@ function CanvasCapture({
   onCapture,
 }: {
   signal?: number;
-  onCapture?: (dataUrl: string) => void;
+  onCapture?: (shots: RingShots) => void;
 }) {
   const { gl, scene, camera } = useThree();
 
   useEffect(() => {
     if (!signal || !onCapture) return;
-    gl.render(scene, camera);
-    onCapture(gl.domElement.toDataURL("image/png"));
+
+    // Orbit the camera to each angle, render, and read — all synchronously in this one task,
+    // so every read happens while its own frame is still in the drawing buffer.
+    const cam = camera;
+    const target = new THREE.Vector3(...CAMERA_TARGET);
+    const radius = cam.position.distanceTo(target);
+
+    const prevPosition = cam.position.clone();
+    const prevQuaternion = cam.quaternion.clone();
+
+    // Top and bottom sit on the camera's own up axis, so they need a hair of lateral offset
+    // or `lookAt` degenerates and the view flips unpredictably.
+    const EPS = 0.001;
+    const positions: Record<RingView, THREE.Vector3> = {
+      front: new THREE.Vector3(0, target.y, radius),
+      side: new THREE.Vector3(radius, target.y, 0),
+      top: new THREE.Vector3(0, target.y + radius, EPS),
+      bottom: new THREE.Vector3(0, target.y - radius, EPS),
+    };
+
+    const shots = {} as RingShots;
+    for (const view of RING_VIEWS) {
+      cam.position.copy(positions[view]);
+      cam.lookAt(target);
+      cam.updateMatrixWorld();
+      gl.render(scene, cam);
+      shots[view] = toScaledPng(gl.domElement);
+    }
+
+    // Put the live camera back exactly where the user left it and repaint, so opening the
+    // review sheet never leaves the interactive view staring at the underside of the ring.
+    cam.position.copy(prevPosition);
+    cam.quaternion.copy(prevQuaternion);
+    cam.updateMatrixWorld();
+    gl.render(scene, cam);
+
+    onCapture(shots);
   }, [signal, onCapture, gl, scene, camera]);
 
   return null;
@@ -2027,7 +2097,7 @@ export default function RingScene({
         ref={controlsRef}
         makeDefault
         enablePan={false}
-        target={[0, 2, 0]}
+        target={CAMERA_TARGET}
         minDistance={20}
         maxDistance={120}
         minPolarAngle={0.15}

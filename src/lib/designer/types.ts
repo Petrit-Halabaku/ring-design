@@ -37,6 +37,13 @@ export type RingValue = {
   surpriseStones: boolean;
 };
 
+/** The four orbit angles the review sheet shows, in display order. */
+export const RING_VIEWS = ["front", "side", "top", "bottom"] as const;
+export type RingView = (typeof RING_VIEWS)[number];
+
+/** One PNG data URL per view, produced in a single synchronous capture pass. */
+export type RingShots = Record<RingView, string>;
+
 export type SwatchOption = { id: string; label: string; hex: string };
 export type IconOption = { id: string; label: string; svg: string };
 export type TextOption = { id: string; label: string };
