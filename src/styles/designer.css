@@ -113,3 +113,46 @@
   outline: 2px solid var(--color-champagne-500);
   outline-offset: 2px;
 }
+
+/*
+ * The sheet is always its full height and slid down by --sheet-y, so only the wanted
+ * amount shows. JS owns all four geometry values in px; CSS just consumes them. That
+ * keeps the calc() chains resolvable and means the canvas height (which reads --peek-h,
+ * a constant) is unaffected by the live drag position.
+ */
+.designer-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  height: var(--sheet-full-h);
+  transform: translate3d(0, var(--sheet-y), 0);
+  transition: transform 320ms var(--ease-sheet);
+  will-change: transform;
+}
+
+.designer-sheet[data-dragging="true"] {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .designer-sheet {
+    transition-duration: 0ms;
+  }
+}
+
+@media (min-width: 768px) {
+  /* The sheet becomes a static right-hand panel: no transform, no drag. */
+  .designer-sheet {
+    top: 0;
+    left: auto;
+    width: 360px;
+    height: 100%;
+    border-left: 1px solid var(--color-line);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    transform: none;
+    transition: none;
+  }
+}

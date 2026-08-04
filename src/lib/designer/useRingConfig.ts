@@ -13,6 +13,7 @@ import {
 import { DEFAULT_BASKET_HALO, type BasketHaloId } from "@/lib/settings/basketHalo";
 import type { RingSettings } from "@/lib/settings/types";
 import type { RingValue } from "./types";
+import { decodeConfig } from "./shareCodec";
 
 export type RingConfigInit = { shapeId?: string; carat?: number };
 
@@ -69,6 +70,35 @@ export function useRingConfig({ shapeId, carat: initialCarat }: RingConfigInit) 
     const ac = new AbortController();
     fetchRingSettings(ac.signal).then(setSettings).catch(() => {});
     return () => ac.abort();
+  }, []);
+
+  // A shared link fills in what it recognises over the defaults; an unparseable or
+  // older-format hash is ignored rather than throwing. SSR hydration requires reading
+  // window.location in an effect after mount, not in the initialiser.
+  useEffect(() => {
+    const patchFromUrl = decodeConfig(window.location.hash);
+    if (!patchFromUrl) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValue((prev) => {
+      // Merging decoded values unchecked is not safe. decodeConfig only guarantees the hash
+      // parsed as an object — a hand-edited or chat-app-mangled link can carry
+      // {"carat":"big"}, and "big".toFixed(2) throws a TypeError inside the carat formatter,
+      // which blanks the whole app rather than degrading. Keep only known keys whose
+      // primitive type matches what we already hold.
+      const safe: Record<string, unknown> = {};
+      for (const [k, incoming] of Object.entries(patchFromUrl)) {
+        const key = k as keyof RingValue;
+        if (!(key in prev)) continue;
+        const current = prev[key];
+        // prongMetalIdx is `number | null` and defaults to null, so a null reference must
+        // still accept a number — otherwise a legitimate round-trip would drop it.
+        const matches =
+          typeof incoming === typeof current ||
+          (current === null && (incoming === null || typeof incoming === "number"));
+        if (matches) safe[key] = incoming;
+      }
+      return { ...prev, ...safe };
+    });
   }, []);
 
   const patch = useCallback(

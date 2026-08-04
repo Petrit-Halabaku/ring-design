@@ -26,8 +26,15 @@
   --color-ink-600: #56574f;
   --color-ink-400: #8a8b82;
 
-  /* Accent. Primary CTA and the rail's active indicator, nothing else. */
-  --color-champagne-500: #a3854f;
+  /*
+   * Accent. Primary CTA and the rail's active indicator, nothing else.
+   *
+   * Deepened from the originally specified #a3854f, which was an accessibility failure:
+   * sand-50 text on it measured 3.25:1, and the CTA labels are 15px — normal-size text
+   * needing 4.5:1 under WCAG AA. #8a6b3a measures 4.61:1 for the same text, and also lifts
+   * the focus ring and rail underline (non-text UI, 3:1 minimum) from 3.25 to 4.61.
+   */
+  --color-champagne-500: #8a6b3a;
   --color-champagne-100: #f0e7d6;
 
   --radius-sm: 8px;

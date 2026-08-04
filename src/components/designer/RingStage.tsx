@@ -9,6 +9,8 @@ const HINT_KEY = "designer-rotate-hint-seen";
 /**
  * The canvas is transparent, so the studio sweep behind it shows through instead of a
  * colour being drawn in WebGL — the same arrangement the vendor's `.wrapper` rule uses.
+ * That sweep is rendered full-bleed by DesignerShell rather than here, so it still fills the
+ * viewport when the sheet collapses and the stage covers only part of it.
  *
  * Height comes from --layout-h minus --peek-h, both px written from JS. --layout-h ignores
  * the keyboard on purpose: sizing this from --app-h would shrink the stage every time the
@@ -37,11 +39,11 @@ export default function RingStage({
 
   return (
     <div
-      className="relative shrink-0"
-      style={{ height: "calc(var(--layout-h) - var(--peek-h))" }}
+      className="relative shrink-0 h-[var(--stage-h)] md:h-full md:w-[calc(100%-360px)]"
+      style={{ "--stage-h": "calc(var(--layout-h) - var(--peek-h))" } as React.CSSProperties}
       onPointerDown={dismissHint}
     >
-      <div className="ring-stage-bg absolute inset-0" />
+      {/* The studio sweep lives on the shell, full-bleed — see DesignerShell. */}
 
       {/*
         `describeRing` is destructured out above and never spread into RingViewer — it is

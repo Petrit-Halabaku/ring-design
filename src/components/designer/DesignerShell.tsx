@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localModelUrl } from "@/lib/settings/models";
 import { prongTipModel } from "@/lib/settings/prongs";
 import { buildCategories } from "@/lib/designer/categories";
 import { useRingConfig, type RingConfigInit } from "@/lib/designer/useRingConfig";
+import { encodeConfig } from "@/lib/designer/shareCodec";
 import { useVisualViewport } from "@/lib/designer/useVisualViewport";
-import ControlGroup from "./controls/ControlGroup";
-import CategoryRail from "./CategoryRail";
+import OptionSheet from "./OptionSheet";
 import RingStage from "./RingStage";
+import ReviewSheet from "./ReviewSheet";
 import TopBar from "./TopBar";
 
 export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
@@ -20,18 +21,65 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
 
   const [activeId, setActiveId] = useState(categories[0].id);
   const [recenterSignal, setRecenterSignal] = useState(0);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [captureSignal, setCaptureSignal] = useState(0);
+  const [shot, setShot] = useState<string | null>(null);
+  const [shareLabel, setShareLabel] = useState("Copy design link");
 
-  const active = categories.find((c) => c.id === activeId) ?? categories[0];
+  const openReview = useCallback(() => {
+    setShot(null);
+    setCaptureSignal((n) => n + 1);
+    setReviewOpen(true);
+  }, []);
+
   const { stone, metal, prongMetal, value, angles, activeProngCount } = cfg;
 
-  // Also reused by the live region in Task 9.
+  const share = useCallback(async () => {
+    const url = `${window.location.origin}${window.location.pathname}${encodeConfig(value)}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareLabel("Link copied");
+      window.setTimeout(() => setShareLabel("Copy design link"), 2000);
+    } catch {
+      // Clipboard is permission-gated and unavailable on insecure origins. Putting the
+      // URL in the address bar still leaves the user something they can copy by hand.
+      window.location.hash = encodeConfig(value).slice(1);
+      setShareLabel("Link in address bar");
+      window.setTimeout(() => setShareLabel("Copy design link"), 2000);
+    }
+  }, [value]);
+
+  // One description of the ring in words, used both as the canvas's accessible label and as
+  // the text announced to screen readers when the configuration changes.
   const describeRing =
     `${metal.uiValue}, ${value.carat.toFixed(2)} carat ${stone.name}, ` +
     `${value.basketHalo} head, size ${value.ringSize.toFixed(2)}`;
 
+  const [announcement, setAnnouncement] = useState("");
+
+  // A configurator whose only feedback is a 3D render tells a screen-reader user nothing.
+  // Debounced because dragging the carat slider fires on every step and would otherwise
+  // flood the live region with dozens of partial announcements.
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAnnouncement(describeRing);
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [describeRing]);
+
   return (
-    <div ref={rootRef} className="designer-root flex flex-col">
-      <TopBar onRecenter={() => setRecenterSignal((n) => n + 1)} />
+    <div ref={rootRef} className="designer-root relative flex flex-col md:flex-row">
+      {/*
+        The studio sweep is full-bleed behind everything, not scoped to the stage. At the
+        sheet's `collapsed` state the stage is only ~62% of the viewport, so a stage-scoped
+        backdrop would end in a hard horizontal line with a band of flat sand beneath it —
+        which would make "collapse to see the whole ring" look broken. The canvas is
+        transparent and keeps its own fixed height, so widening the backdrop cannot resize it.
+      */}
+      <div className="ring-stage-bg absolute inset-0" />
+
+      <TopBar onRecenter={() => setRecenterSignal((n) => n + 1)} onShare={share} />
 
       <RingStage
         describeRing={describeRing}
@@ -57,31 +105,37 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
         bandPave={value.bandPave}
         bandPaveLength={value.bandPaveLength}
         recenterSignal={recenterSignal}
+        captureSignal={captureSignal}
+        onCapture={setShot}
       />
 
-      {/* Static placeholder for the sheet. Task 5 replaces this whole element. */}
-      <div
-        className="flex min-h-0 shrink-0 flex-col rounded-t-sheet bg-sand-50 shadow-sheet"
-        style={{ height: "var(--peek-h)" }}
-      >
-        <CategoryRail
-          categories={categories}
-          activeId={activeId}
-          onSelect={setActiveId}
-        />
+      <OptionSheet
+        categories={categories}
+        activeId={activeId}
+        onSelect={setActiveId}
+        footer={
+          <button
+            type="button"
+            onClick={openReview}
+            className="min-h-12 w-full rounded-md bg-champagne-500 text-[15px] text-sand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500"
+          >
+            Review your ring
+          </button>
+        }
+      />
 
-        <div
-          role="tabpanel"
-          id={`panel-${active.id}`}
-          aria-labelledby={`tab-${active.id}`}
-          className="min-h-0 flex-1 divide-y divide-line/50 overflow-y-auto px-4 [overscroll-behavior:contain]"
-          style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
-        >
-          {active.groups.map((g) => (
-            <ControlGroup key={g.id} group={g} />
-          ))}
-        </div>
-      </div>
+      <ReviewSheet
+        open={reviewOpen}
+        categories={categories}
+        imageUrl={shot}
+        onClose={() => setReviewOpen(false)}
+        onShare={share}
+        shareLabel={shareLabel}
+      />
+
+      <p role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
     </div>
   );
 }

@@ -218,6 +218,10 @@ export type SceneProps = {
   bandPaveLength?: BandPaveLength;
   /** Signal to reset the camera to its initial position. */
   recenterSignal?: number;
+  /** Signal to capture the canvas as a PNG data URL. */
+  captureSignal?: number;
+  /** Callback when canvas is captured. */
+  onCapture?: (dataUrl: string) => void;
 };
 
 /**
@@ -1778,6 +1782,29 @@ function Shank({
   );
 }
 
+/**
+ * Reads the canvas as a PNG. `toDataURL` on a WebGL canvas returns a blank image unless
+ * the drawing buffer still holds the frame, so render explicitly and read synchronously
+ * in the same task — that keeps `preserveDrawingBuffer` off for the main render loop.
+ */
+function CanvasCapture({
+  signal,
+  onCapture,
+}: {
+  signal?: number;
+  onCapture?: (dataUrl: string) => void;
+}) {
+  const { gl, scene, camera } = useThree();
+
+  useEffect(() => {
+    if (!signal || !onCapture) return;
+    gl.render(scene, camera);
+    onCapture(gl.domElement.toDataURL("image/png"));
+  }, [signal, onCapture, gl, scene, camera]);
+
+  return null;
+}
+
 export default function RingScene({
   stone,
   stoneModel,
@@ -1801,6 +1828,8 @@ export default function RingScene({
   bandPave = false,
   bandPaveLength = "Half",
   recenterSignal,
+  captureSignal,
+  onCapture,
 }: SceneProps) {
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
 
@@ -2004,6 +2033,8 @@ export default function RingScene({
         minPolarAngle={0.15}
         maxPolarAngle={Math.PI - 0.15}
       />
+
+      <CanvasCapture signal={captureSignal} onCapture={onCapture} />
     </Canvas>
   );
 }
