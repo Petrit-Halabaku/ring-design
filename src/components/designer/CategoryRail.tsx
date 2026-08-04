@@ -49,7 +49,7 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
                 active ? "text-ink-900" : "text-ink-600"
               }`}
             >
-              <span aria-hidden className={active ? "text-champagne-500" : "text-ink-400"}>
+              <span aria-hidden className={active ? "text-ink-900" : "text-ink-400"}>
                 {c.icon}
               </span>
               {c.label}

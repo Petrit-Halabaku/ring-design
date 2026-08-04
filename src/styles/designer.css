@@ -16,9 +16,10 @@
   background: var(--color-sand-200);
   overscroll-behavior: none;
 
-  /* Fallbacks until JS measures. --app-h is overwritten on mount. */
+  /* Fallbacks until JS measures. --app-h and --layout-h are overwritten on mount. */
   --app-h: 100dvh;
-  --peek-h: clamp(240px, calc(var(--app-h) * 0.38), 420px);
+  --layout-h: 100dvh;
+  --peek-h: clamp(240px, calc(var(--layout-h) * 0.38), 420px);
   --rail-h: 76px;
   --sheet-full-h: 480px;
   --sheet-y: 0px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import RingViewer from "@/components/three/RingViewer";
 import type { SceneProps } from "@/components/three/RingScene";
 
@@ -10,17 +10,24 @@ const HINT_KEY = "designer-rotate-hint-seen";
  * The canvas is transparent, so the studio sweep behind it shows through instead of a
  * colour being drawn in WebGL — the same arrangement the vendor's `.wrapper` rule uses.
  *
- * Height comes from --app-h minus --peek-h, both px values written from JS. It is
- * deliberately independent of the sheet's live drag position: resizing a WebGL canvas
- * mid-gesture drops frames.
+ * Height comes from --layout-h minus --peek-h, both px written from JS. --layout-h ignores
+ * the keyboard on purpose: sizing this from --app-h would shrink the stage every time the
+ * engraving field is focused, and resizing a WebGL canvas drops frames. It is likewise
+ * independent of the sheet's live drag position.
  */
 export default function RingStage({
   describeRing,
   ...scene
 }: SceneProps & { describeRing: string }) {
-  const [showHint, setShowHint] = useState(() =>
-    typeof sessionStorage !== "undefined" ? !sessionStorage.getItem(HINT_KEY) : false,
-  );
+  // Read in an effect, not a lazy initialiser: sessionStorage is unavailable during SSR, so
+  // initialising from it renders false on the server and true on the client's first pass —
+  // a hydration mismatch.
+  const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!sessionStorage.getItem(HINT_KEY)) setShowHint(true);
+  }, []);
 
   function dismissHint() {
     if (!showHint) return;
@@ -31,7 +38,7 @@ export default function RingStage({
   return (
     <div
       className="relative shrink-0"
-      style={{ height: "calc(var(--app-h) - var(--peek-h))" }}
+      style={{ height: "calc(var(--layout-h) - var(--peek-h))" }}
       onPointerDown={dismissHint}
     >
       <div className="ring-stage-bg absolute inset-0" />
