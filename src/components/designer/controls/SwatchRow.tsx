@@ -12,12 +12,12 @@ type Props = {
 /**
  * Metal colours, filled with the hex the settings API reports.
  *
- * Four or fewer options fit the panel as an equal row (colour families). Longer lists
- * (e.g. Prong Metal) keep a horizontal scroll; the selected name prints below those.
+ * Five or fewer options fit the panel as an equal row (Match Band + colour families).
+ * Longer lists keep a horizontal scroll; the selected name prints below those.
  */
 export default function SwatchRow({ options, value, onChange, label }: Props) {
   const selected = options.find((o) => o.id === value);
-  const compact = options.length <= 4;
+  const compact = options.length <= 5;
 
   return (
     <div>

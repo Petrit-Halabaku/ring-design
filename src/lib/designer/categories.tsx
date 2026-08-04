@@ -99,6 +99,64 @@ export function buildCategories(cfg: RingConfig): Category[] {
     });
   }
 
+  const matchBand = value.prongMetalIdx === null;
+  const prongParsed = parseMetalUiValue(prongMetal.uiValue);
+  const prongRefUi = matchBand ? metal.uiValue : prongMetal.uiValue;
+  const prongKarat = matchBand ? null : prongParsed.karat;
+
+  const prongMetalGroups: ControlGroupModel[] = [
+    {
+      id: "head-prong-metal",
+      label: "Prong Metal",
+      hint: matchBand ? "Matches the band" : prongMetal.description,
+      control: {
+        kind: "swatch",
+        options: [
+          // backgroundColor, not material.color: the latter is the 3D render colour and
+          // is #ffffff for 14K White, which would draw this tile as an invisible circle.
+          { id: MATCH_BAND, label: "Match Band", hex: metal.backgroundColor },
+          ...metalColourOptions(settings.metals),
+        ],
+        value: matchBand ? MATCH_BAND : prongParsed.colour,
+        onChange: (id) => {
+          if (id === MATCH_BAND) {
+            set.setProngMetalIdx(null);
+            return;
+          }
+          const uiValue = resolveMetalByColour(
+            settings.metals,
+            id as MetalColourId,
+            prongRefUi,
+          );
+          set.setProngMetalIdx(settings.metals.findIndex((m) => m.uiValue === uiValue));
+        },
+      },
+    },
+  ];
+
+  if (prongKarat) {
+    prongMetalGroups.push({
+      id: "head-prong-karat",
+      label: "Prong Karat",
+      control: {
+        kind: "segmented",
+        options: [
+          { id: "14K", label: "14K" },
+          { id: "18K", label: "18K" },
+        ],
+        value: prongKarat,
+        onChange: (id) => {
+          const uiValue = resolveMetalByKarat(
+            settings.metals,
+            id as MetalKaratId,
+            prongMetal.uiValue,
+          );
+          set.setProngMetalIdx(settings.metals.findIndex((m) => m.uiValue === uiValue));
+        },
+      },
+    });
+  }
+
   return [
     {
       id: "metal",
@@ -127,27 +185,18 @@ export function buildCategories(cfg: RingConfig): Category[] {
           },
         },
         {
-          id: "stone-type",
-          label: "Diamond Type",
-          hint: "Applies to the centre stone and pave, where present",
-          control: {
-            kind: "segmented",
-            options: asOptions(["Natural", "Lab Grown"]),
-            value: value.diamondType,
-            onChange: (id) => set.setDiamondType(id as typeof value.diamondType),
-          },
-        },
-        {
           id: "stone-carat",
           label: "Carat Weight",
           control: {
             kind: "range",
             min: caratRange.min,
-            max: caratRange.max,
+            // Cap the default track at 5ct so presets (≤3) sit under where the thumb
+            // actually lands; widen if the current value is already above that.
+            max: Math.min(caratRange.max, Math.max(5, value.carat)),
             step: 0.05,
             value: value.carat,
             presets: [0.5, 1, 1.5, 2, 3].filter(
-              (p) => p >= caratRange.min && p <= caratRange.max,
+              (p) => p >= caratRange.min && p <= Math.min(caratRange.max, Math.max(5, value.carat)),
             ),
             format: ct,
             onChange: set.setCarat,
@@ -202,31 +251,7 @@ export function buildCategories(cfg: RingConfig): Category[] {
             onChange: set.setProngPave,
           },
         },
-        {
-          id: "head-prong-metal",
-          label: "Prong Metal",
-          hint: value.prongMetalIdx === null ? "Matches the band" : prongMetal.description,
-          control: {
-            kind: "swatch",
-            options: [
-              // backgroundColor, not material.color: the latter is the 3D render colour and
-              // is #ffffff for 14K White, which would draw this tile as an invisible circle.
-              { id: MATCH_BAND, label: "Match Band", hex: metal.backgroundColor },
-              ...settings.metals.map((m) => ({
-                id: m.uiValue,
-                label: m.uiValue,
-                hex: m.backgroundColor,
-              })),
-            ],
-            value: value.prongMetalIdx === null ? MATCH_BAND : prongMetal.uiValue,
-            onChange: (id) =>
-              set.setProngMetalIdx(
-                id === MATCH_BAND
-                  ? null
-                  : settings.metals.findIndex((m) => m.uiValue === id),
-              ),
-          },
-        },
+        ...prongMetalGroups,
       ],
     },
     {

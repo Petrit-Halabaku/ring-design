@@ -79,12 +79,20 @@
   height: 44px;
   background: transparent;
   touch-action: pan-y;
+  /* Filled portion tracks the current value; set --range-pct on a parent. */
+  --range-fill: linear-gradient(
+    to right,
+    var(--color-ink-900) 0%,
+    var(--color-ink-900) var(--range-pct, 0%),
+    var(--color-sand-300) var(--range-pct, 0%),
+    var(--color-sand-300) 100%
+  );
 }
 
 .designer-range::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: var(--color-sand-300);
+  background: var(--range-fill);
 }
 
 .designer-range::-webkit-slider-thumb {
@@ -102,7 +110,7 @@
 .designer-range::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: var(--color-sand-300);
+  background: var(--range-fill);
 }
 
 .designer-range::-moz-range-thumb {
