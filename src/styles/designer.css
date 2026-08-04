@@ -1,0 +1,63 @@
+/*
+ * Ring designer shell. Deliberately independent of wizard.css — the walkthrough is
+ * out of scope but its stylesheet stays loaded, so nothing here may reach into it.
+ *
+ * Geometry custom properties are written from JS (useVisualViewport, OptionSheet) as
+ * plain px values. CSS only consumes them, so the calc() chains stay resolvable and
+ * the canvas height never depends on the sheet's live drag position.
+ */
+
+.designer-root {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  z-index: 1003;
+  background: var(--color-sand-200);
+  overscroll-behavior: none;
+
+  /* Fallbacks until JS measures. --app-h is overwritten on mount. */
+  --app-h: 100dvh;
+  --peek-h: 320px;
+  --rail-h: 76px;
+  --sheet-full-h: 480px;
+  --sheet-y: 0px;
+}
+
+/*
+ * Studio backdrop for the ring stage. The vendor applies these on `.wrapper` for
+ * desktop and `.RingmobileContainer` for narrow layouts, from two separately
+ * compressed images.
+ */
+.ring-stage-bg {
+  background-image: url("/bg/bg-mobile.jpg");
+  background-position: bottom;
+  background-size: cover;
+}
+
+@media (min-width: 768px) {
+  .ring-stage-bg {
+    background-image: url("/bg/bg-desktop.jpg");
+  }
+}
+
+.designer-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-sand-100);
+  border-top-color: var(--color-ink-900);
+  border-radius: 50%;
+  animation: designer-spin 1s linear infinite;
+}
+
+@keyframes designer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .designer-spinner {
+    animation-duration: 2s;
+  }
+}

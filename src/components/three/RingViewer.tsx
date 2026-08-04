@@ -13,7 +13,7 @@ const RingScene = dynamic(() => import("./RingScene"), {
 function LoadingPreview() {
   return (
     <div className="flex h-full w-full items-center justify-center" aria-label="Loading 3D preview">
-      <div className="jos-loading-spinner" />
+      <div className="designer-spinner" />
     </div>
   );
 }

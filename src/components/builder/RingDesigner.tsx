@@ -318,7 +318,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   }
 
   return (
-    <div className="customizer-container">
+    <div className="designer-root">
       <div className="relative flex h-full w-full flex-col overflow-hidden">
         {/* Ring stage — real GLB models, same pipeline as the original */}
         <div className="relative flex min-h-0 flex-1 items-center justify-center">

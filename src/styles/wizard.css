@@ -839,30 +839,3 @@
     padding: 0.85em 1em !important;
   }
 }
-
-/*
- * Studio backdrop for the ring stage. The original applies these on `.wrapper` for desktop
- * and `.RingmobileContainer` for the narrow layout, using two separately compressed images.
- */
-.ring-stage-bg {
-  background-image: url("/bg/bg-mobile.jpg");
-  background-position: bottom;
-  background-size: cover;
-}
-
-@media (min-width: 641px) {
-  .ring-stage-bg {
-    background-image: url("/bg/bg-desktop.jpg");
-  }
-}
-
-/* ── 3D designer container (replaces the customizer iframe) ── */
-.customizer-container {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1003;
-  background: white;
-  overscroll-behavior: none;
-}
