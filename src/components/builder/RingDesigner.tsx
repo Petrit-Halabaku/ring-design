@@ -135,7 +135,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
           {
             label: "Diamond Type",
             hint: "Natural diamond center stones & pave (if applicable)",
-            selected: 0,
+            selected: value.diamondType === "Lab Grown" ? 1 : 0,
             choices: [{ label: "Natural" }, { label: "Lab Grown" }],
           },
         ],
@@ -201,6 +201,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
       stone,
       value.stoneIdx,
       value.carat,
+      value.diamondType,
       angles.length,
       activeProngCount,
       prongCountOptions,
@@ -215,6 +216,8 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   function choose(panelId: string, groupIdx: number, choiceIdx: number) {
     if (panelId === "metal" && groupIdx === 0) set.setMetalIdx(choiceIdx);
     else if (panelId === "diamonds" && groupIdx === 0) set.setStoneIdx(choiceIdx);
+    else if (panelId === "diamonds" && groupIdx === 1)
+      set.setDiamondType(choiceIdx === 1 ? "Lab Grown" : "Natural");
     else if (panelId === "head" && groupIdx === 0)
       set.setBasketHalo(BASKET_HALOS[choiceIdx].id);
     else if (panelId === "head" && groupIdx === 1)
@@ -243,6 +246,17 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
   function activeChoice(panel: Panel, groupIdx: number, group: Group): number {
     if (panel.id === "metal" && groupIdx === 0) return value.metalIdx;
     if (panel.id === "diamonds" && groupIdx === 0) return value.stoneIdx;
+    if (panel.id === "diamonds" && groupIdx === 1)
+      return value.diamondType === "Lab Grown" ? 1 : 0;
+    if (panel.id === "head" && groupIdx === 0)
+      return Math.max(0, BASKET_HALOS.findIndex((b) => b.id === value.basketHalo));
+    if (panel.id === "head" && groupIdx === 1)
+      return Math.max(0, prongCountOptions.indexOf(activeProngCount));
+    if (panel.id === "head" && groupIdx === 2)
+      return Math.max(0, PRONG_TIPS.findIndex((t) => t.id === value.prongTip));
+    if (panel.id === "head" && groupIdx === 3) return value.prongPave ? 1 : 0;
+    if (panel.id === "head" && groupIdx === 4)
+      return value.prongMetalIdx === null ? 0 : value.prongMetalIdx + 1;
     if (panel.id === "band" && groupIdx === 0)
       return Math.max(0, BAND_STYLES.indexOf(value.bandStyle));
     if (panel.id === "band" && groupIdx === 1) return value.cathedral ? 1 : 0;
@@ -254,7 +268,7 @@ export default function RingDesigner({ shapeId, carat: initialCarat }: DesignerP
     if (panel.id === "more" && groupIdx === 0)
       return value.engravingFont === "Cursive" ? 1 : 0;
     if (panel.id === "more" && groupIdx === 1) return value.surpriseStones ? 1 : 0;
-    return 0;
+    return group.selected;
   }
 
   return (
