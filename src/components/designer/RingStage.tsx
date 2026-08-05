@@ -31,6 +31,27 @@ export default function RingStage({
     if (!sessionStorage.getItem(HINT_KEY)) setShowHint(true);
   }, []);
 
+  /*
+   * How much of the canvas the top bar covers. The canvas is full-bleed and starts at y=0
+   * with the translucent bar laid over it, so the scene has to be told to keep the ring out
+   * of that strip — otherwise a correctly "fitted" ring still puts its stone behind the bar.
+   * Measured rather than assumed: the bar is 52px plus env(safe-area-inset-top), which is
+   * ~99px on a notched iPhone.
+   */
+  const [topInset, setTopInset] = useState(52);
+
+  useEffect(() => {
+    const bar = document.querySelector<HTMLElement>(".designer-root header");
+    if (!bar) return;
+
+    const measure = () => setTopInset(bar.getBoundingClientRect().height);
+    measure();
+
+    const ro = new ResizeObserver(measure);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, []);
+
   function dismissHint() {
     if (!showHint) return;
     sessionStorage.setItem(HINT_KEY, "1");
@@ -50,7 +71,7 @@ export default function RingStage({
         not part of SceneProps, and forwarding it would be a type error.
       */}
       <div className="absolute inset-0" role="img" aria-label={`3D preview: ${describeRing}`}>
-        <RingViewer {...scene} />
+        <RingViewer {...scene} topInset={topInset} />
       </div>
 
       {showHint && (
