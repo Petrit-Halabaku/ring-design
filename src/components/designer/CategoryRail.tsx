@@ -7,14 +7,26 @@ type Props = {
   categories: Category[];
   activeId: string;
   onSelect: (id: string) => void;
+  /** Whether the options body is showing. The active tab doubles as its disclosure. */
+  expanded?: boolean;
   railRef?: RefObject<HTMLDivElement | null>;
 };
 
 /**
  * A real tablist: arrow keys move between categories, and the active tab is the only
  * place champagne appears besides the primary CTA.
+ *
+ * On a phone the active tab is also the disclosure for the options body — tapping it again
+ * collapses the sheet — so it carries `aria-expanded`. The parent owns that behaviour; this
+ * component only reports the state.
  */
-export default function CategoryRail({ categories, activeId, onSelect, railRef }: Props) {
+export default function CategoryRail({
+  categories,
+  activeId,
+  onSelect,
+  expanded,
+  railRef,
+}: Props) {
   function onKeyDown(e: React.KeyboardEvent) {
     const i = categories.findIndex((c) => c.id === activeId);
     if (e.key === "ArrowRight") {
@@ -50,6 +62,7 @@ export default function CategoryRail({ categories, activeId, onSelect, railRef }
               role="tab"
               id={`tab-${c.id}`}
               aria-selected={active}
+              aria-expanded={active ? expanded : undefined}
               aria-controls={`panel-${c.id}`}
               tabIndex={active ? 0 : -1}
               onClick={() => onSelect(c.id)}

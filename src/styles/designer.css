@@ -21,6 +21,7 @@
   --layout-h: 100dvh;
   --peek-h: clamp(240px, calc(var(--layout-h) * 0.38), 420px);
   --rail-h: 76px;
+  --action-h: 76px;
   --sheet-full-h: 480px;
   /*
    * Start at the peek offset, not 0. --sheet-y: 0 means the sheet is fully expanded, so the
@@ -154,8 +155,51 @@
   transition: none;
 }
 
+/*
+ * The primary CTA is pinned to the viewport bottom at every snap.
+ *
+ * Because the sheet is always --sheet-full-h tall and slid *down* by --sheet-y, anything at
+ * the bottom of its normal flow sits below the viewport: "Review your ring" was only ever
+ * visible at `full`, i.e. once the sheet had covered the ring it exists to summarise. Taking
+ * the bar out of flow and counter-translating it by the same --sheet-y glues it to the
+ * viewport bottom, on the compositor, in step with the sheet's own transition.
+ */
+.designer-sheet-action {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  transform: translate3d(0, calc(-1 * var(--sheet-y)), 0);
+  transition: transform 320ms var(--ease-sheet);
+  will-change: transform;
+}
+
+.designer-sheet[data-dragging="true"] .designer-sheet-action {
+  transition: none;
+}
+
+/*
+ * The body runs to the sheet's bottom, so at any snap but `full` its lower --sheet-y px are
+ * off-viewport and its last --action-h px are under the pinned bar. Padding by exactly that
+ * much means the final control can still be scrolled into the clear — and, because the two
+ * cancel out, `scrollHeight - scrollTop - clientHeight` reports true remaining content, which
+ * is what the scroll cue keys off.
+ */
+.designer-sheet-body {
+  /*
+   * Contain the controls' own stacking. Segmented lifts its labels above its sliding thumb
+   * with `z-10`, and since the sheet is the nearest stacking context that z-10 outranked the
+   * pinned bar's z-index — the "Fit" segments painted straight through the opaque CTA. Any
+   * control may now stack internally however it likes without escaping the body.
+   */
+  isolation: isolate;
+  padding-bottom: calc(var(--sheet-y) + var(--action-h));
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .designer-sheet {
+  .designer-sheet,
+  .designer-sheet-action {
     transition-duration: 0ms;
   }
 }
@@ -172,5 +216,20 @@
     border-top-right-radius: 0;
     transform: none;
     transition: none;
+  }
+
+  /* Nothing is translated here, so the bar returns to the end of the flow. --sheet-y is
+     stale inline state from the last narrow layout and must not reach either rule.
+     `relative` rather than `static`: at the end of a flex column the two lay out the same,
+     but the scroll cue is absolutely positioned against this bar and needs it to stay a
+     containing block. */
+  .designer-sheet-action {
+    position: relative;
+    transform: none;
+    transition: none;
+  }
+
+  .designer-sheet-body {
+    padding-bottom: 0;
   }
 }

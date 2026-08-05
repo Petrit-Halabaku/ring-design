@@ -148,7 +148,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
         categories={categories}
         activeId={activeId}
         onSelect={setActiveId}
-        footer={
+        action={
           <button
             type="button"
             onClick={openReview}
