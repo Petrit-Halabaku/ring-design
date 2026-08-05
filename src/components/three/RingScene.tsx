@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, Suspense, useDeferredValue, useLayoutEffect, useMemo, type ComponentRef } from "react";
-import { Canvas, useLoader, useThree } from "@react-three/fiber";
+import { useEffect, useRef, Suspense, useDeferredValue, useLayoutEffect, useMemo, type ComponentRef, type RefObject } from "react";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import {
   MeshRefractionMaterial,
   OrbitControls,
@@ -252,6 +252,12 @@ export type SceneProps = {
   /** Melee set into the band's shoulders. */
   bandPave?: boolean;
   bandPaveLength?: BandPaveLength;
+  /**
+   * CSS px along the canvas's top edge that something else is drawn over — the translucent
+   * top bar. The canvas runs full-bleed underneath it on purpose, so the framing has to keep
+   * the ring out of that strip or the stone sits behind frosted glass.
+   */
+  topInset?: number;
   /** Signal to reset the camera to its initial position. */
   recenterSignal?: number;
   /** Signal to capture the canvas as a PNG data URL. */
@@ -1823,6 +1829,155 @@ function Shank({
  * the drawing buffer still holds the frame, so render explicitly and read synchronously
  * in the same task — that keeps `preserveDrawingBuffer` off for the main render loop.
  */
+/** Only act when the framing is off by enough to be worth moving the camera for. */
+const FIT_EPSILON = 0.5;
+
+/** Breathing room so the ring never touches the frame edge. */
+const FIT_MARGIN = 1.1;
+
+/**
+ * Keeps the whole ring inside the frame, at any viewport size and any configuration.
+ *
+ * The camera was fixed — fov 30 at z=52, aimed at y=2 — while the ring hangs from its group
+ * at y=5 down by twice the band's outer radius. At the default ring size that puts the bottom
+ * of the shank at y≈-15.5 against a frustum that stops at y≈-11.9, so the band was cut off at
+ * every viewport size while a fifth of the frame sat empty above the stone. Ring size drives
+ * that radius, so the larger the ring the worse it got, and no fixed camera can cover the
+ * 3-to-13 size range.
+ *
+ * Fitting a cylinder rather than `CanvasCapture`'s bounding sphere, because the two want
+ * different things: the capture renders top, bottom and side, so it needs a distance that is
+ * safe from every direction. Here the controls keep the camera upright and orbiting the Y
+ * axis, so the widest the ring can ever appear is its radius about that axis and the tallest
+ * is its own half-height. A sphere fit would be correct but would hold the ring at roughly
+ * half the frame height on a portrait phone, which is a worse picture than the one being
+ * fixed.
+ */
+function FitCamera({
+  controlsRef,
+  recenterSignal,
+  topInset = 0,
+}: {
+  controlsRef: RefObject<ComponentRef<typeof OrbitControls> | null>;
+  recenterSignal?: number;
+  topInset?: number;
+}) {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  const scene = useThree((s) => s.scene);
+  const size = useThree((s) => s.size);
+
+  const box = useRef(new THREE.Box3());
+  const centre = useRef(new THREE.Vector3());
+  const dir = useRef(new THREE.Vector3());
+  /** Last distance this fitted to, so the user's zoom can be carried across as a ratio. */
+  const fitted = useRef(0);
+  const frame = useRef(0);
+  /**
+   * Frames left to hold the neutral pose after a recentre.
+   *
+   * One frame is not enough: the controls damp, so the momentum left over from the flick
+   * that got the ring into a bad rotation is still being applied for a few frames after the
+   * press, on top of whatever this sets. Re-asserting until it decays is what makes recentre
+   * land on the front view instead of near it.
+   */
+  const neutral = useRef(0);
+
+  useEffect(() => {
+    if (recenterSignal) neutral.current = 20;
+  }, [recenterSignal]);
+
+  useFrame(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const forcing = neutral.current > 0;
+    if (forcing) neutral.current--;
+
+    /*
+     * Measuring the scene is not free and nothing here moves at frame rate, so once a fit has
+     * landed this only re-checks a few times a second — still often enough to catch a slider
+     * drag, a resize, or a GLB resolving late.
+     *
+     * Until that first fit, though, run every frame. Throttling from the start meant the ring
+     * stayed on the unfitted camera for ten frames, and on a slow device that is long enough
+     * to show the clipped framing this exists to prevent. A recentre is a direct press and
+     * likewise cannot wait.
+     */
+    if (!forcing && fitted.current > 0 && frame.current++ % 10 !== 0) return;
+
+    box.current.setFromObject(scene);
+    if (box.current.isEmpty()) return;
+
+    const b = box.current;
+    // Half-extents about the orbit axis, which passes through the target's x/z.
+    const halfW = Math.hypot(
+      Math.max(Math.abs(b.min.x), Math.abs(b.max.x)),
+      Math.max(Math.abs(b.min.z), Math.abs(b.max.z)),
+    );
+    const halfH = (b.max.y - b.min.y) / 2;
+    if (halfW <= 0 || halfH <= 0) return;
+
+    const vFov = THREE.MathUtils.degToRad(camera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+
+    // The top bar covers this share of the canvas, leaving the rest to frame the ring in.
+    const insetFrac =
+      size.height > 0 ? THREE.MathUtils.clamp(topInset / size.height, 0, 0.4) : 0;
+
+    // Looking from directly above, the ring's *vertical* extent on screen is its width, not
+    // its height — so the vertical solve takes whichever of the two is larger.
+    const fit = THREE.MathUtils.clamp(
+      Math.max(
+        halfW / Math.tan(hFov / 2),
+        Math.max(halfH, halfW) / (Math.tan(vFov / 2) * (1 - insetFrac)),
+      ) * FIT_MARGIN,
+      20,
+      200,
+    );
+
+    /*
+     * Aim above the ring's centre by half the covered strip, which slides the ring down the
+     * screen by exactly the amount the bar hides. Without it the fit centres on the whole
+     * canvas and the stone ends up behind the bar — the frame is technically holding the
+     * whole ring, but a chunk of it is under frosted glass.
+     */
+    const worldH = 2 * fit * Math.tan(vFov / 2);
+    centre.current.set(0, (b.max.y + b.min.y) / 2 + (worldH * insetFrac) / 2, 0);
+    const settled =
+      Math.abs(fit - fitted.current) < FIT_EPSILON &&
+      centre.current.distanceToSquared(controls.target) < 0.01;
+    if (settled && !forcing) return;
+
+    /*
+     * Carry the user's zoom across as a ratio of the fitted distance rather than an absolute
+     * one. Re-fitting on an absolute distance would snap the view back to default every time
+     * the carat or ring-size slider moved — which is exactly when someone is most likely to
+     * have zoomed in to watch the change.
+     */
+    const ratio =
+      forcing || fitted.current <= 0
+        ? 1
+        : THREE.MathUtils.clamp(
+            camera.position.distanceTo(controls.target) / fitted.current,
+            0.4,
+            2.5,
+          );
+
+    // A recentre also has to undo rotation; +Z is the orientation the scene is authored for.
+    if (forcing) dir.current.set(0, 0, 1);
+    else dir.current.subVectors(camera.position, controls.target).normalize();
+
+    controls.target.copy(centre.current);
+    camera.position.copy(centre.current).addScaledVector(dir.current, fit * ratio);
+    camera.updateProjectionMatrix();
+    controls.update();
+
+    fitted.current = fit;
+  });
+
+  return null;
+}
+
 function CanvasCapture({
   signal,
   onCapture,
@@ -1922,18 +2077,16 @@ export default function RingScene({
   surpriseStones = false,
   bandPave = false,
   bandPaveLength = "Half",
+  topInset,
   recenterSignal,
   captureSignal,
   onCapture,
 }: SceneProps) {
   const controlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
 
-  // A touch 3D viewer with no way to undo a bad rotation is a dead end. `reset()` restores
-  // the camera and target OrbitControls captured on mount, which are the values in the
-  // <Canvas camera> and <OrbitControls target> props below.
-  useEffect(() => {
-    if (recenterSignal) controlsRef.current?.reset();
-  }, [recenterSignal]);
+  // A touch 3D viewer with no way to undo a bad rotation is a dead end. Recentring is handled
+  // by FitCamera rather than `controls.reset()`: reset restores the camera captured on mount,
+  // which is the unfitted framing that cut the bottom off the band.
 
   const head = useHeadLayout(
     stone,
@@ -2124,9 +2277,17 @@ export default function RingScene({
         enablePan={false}
         target={CAMERA_TARGET}
         minDistance={20}
-        maxDistance={120}
+        // Headroom for FitCamera: a size-13 band with a large stone needs well past the old
+        // 120 on a narrow portrait stage, and the clamp would otherwise reintroduce clipping.
+        maxDistance={200}
         minPolarAngle={0.15}
         maxPolarAngle={Math.PI - 0.15}
+      />
+
+      <FitCamera
+        controlsRef={controlsRef}
+        recenterSignal={recenterSignal}
+        topInset={topInset}
       />
 
       <CanvasCapture signal={captureSignal} onCapture={onCapture} />
