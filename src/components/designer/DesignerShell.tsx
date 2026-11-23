@@ -162,6 +162,7 @@ export default function DesignerShell({ shapeId, carat }: RingConfigInit) {
       <ReviewSheet
         open={reviewOpen}
         categories={categories}
+        design={value}
         shots={shots}
         onClose={() => setReviewOpen(false)}
         onShare={share}

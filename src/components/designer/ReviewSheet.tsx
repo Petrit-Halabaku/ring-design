@@ -7,6 +7,7 @@ import {
   RING_VIEWS,
   type Category,
   type RingShots,
+  type RingValue,
   type RingView,
 } from "@/lib/designer/types";
 
@@ -20,6 +21,7 @@ const VIEW_LABELS: Record<RingView, string> = {
 type Props = {
   open: boolean;
   categories: Category[];
+  design: RingValue;
   shots: RingShots | null;
   onClose: () => void;
   onShare?: () => void;
@@ -46,6 +48,7 @@ function readValue(c: Category["groups"][number]["control"]): string {
 export default function ReviewSheet({
   open,
   categories,
+  design,
   shots,
   onClose,
   onShare,
@@ -54,6 +57,32 @@ export default function ReviewSheet({
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreTo = useRef<HTMLElement | null>(null);
   const [galleryView, setGalleryView] = useState<RingView | null>(null);
+  const savingRef = useRef(false);
+  const [saveResult, setSaveResult] = useState<{
+    design: RingValue;
+    status: "saving" | "saved" | "error";
+  } | null>(null);
+  const saving = saveResult?.status === "saving";
+  const currentSaveStatus = saveResult?.design === design ? saveResult.status : null;
+
+  async function saveDesign() {
+    if (savingRef.current || currentSaveStatus === "saved") return;
+
+    savingRef.current = true;
+    setSaveResult({ design, status: "saving" });
+    try {
+      const response = await fetch("/api/ring-design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(design),
+      });
+      setSaveResult({ design, status: response.ok ? "saved" : "error" });
+    } catch {
+      setSaveResult({ design, status: "error" });
+    } finally {
+      savingRef.current = false;
+    }
+  }
 
   // This component stays mounted while closed, so gallery state would survive a close and
   // reopen — landing the user straight back in the gallery. Every close path goes through
@@ -193,12 +222,20 @@ export default function ReviewSheet({
         className="shrink-0 space-y-2 border-t border-line/60 px-4 pt-3"
         style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))" }}
       >
-        <button
-          type="button"
-          className="min-h-12 w-full rounded-md bg-champagne-500 text-[15px] text-sand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500"
-        >
-          Contact a jeweler
-        </button>
+        <div>
+          <button
+            type="button"
+            onClick={saveDesign}
+            aria-disabled={saving || currentSaveStatus === "saved"}
+            className="min-h-12 w-full rounded-md bg-champagne-500 text-[15px] text-sand-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-champagne-500 aria-disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save design"}
+          </button>
+          <div role="status" className="text-center text-[13px] text-ink-900 [&:not(:empty)]:mt-2">
+            {!saving && currentSaveStatus === "saved" && "Design saved and emailed."}
+            {!saving && currentSaveStatus === "error" && "Couldn’t confirm the save. You can try again."}
+          </div>
+        </div>
         {onShare && (
           <button
             type="button"
